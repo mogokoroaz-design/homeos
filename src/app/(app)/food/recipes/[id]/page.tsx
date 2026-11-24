@@ -1,19 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil, Star, Trash2, ShoppingCart, Clock, Thermometer, Users, ExternalLink, CircleCheck, CircleAlert, Circle } from "lucide-react";
+import { Pencil, Star, Trash2, Clock, Thermometer, ExternalLink } from "lucide-react";
 import { checkRecipeAgainstPantry, getRecipe } from "@/lib/food/recipes";
 import { computeRecipeNutrition } from "@/lib/food/nutrition";
 import { prisma } from "@/lib/db";
 import { requireViewer } from "@/lib/auth/session";
 import { listNotes } from "@/lib/notes";
 import { today } from "@/lib/dates";
-import { formatQuantity } from "@/lib/units";
-import { round } from "@/lib/utils";
-import { Card, CardHeader, CardBody, Badge, LinkButton, Input } from "@/components/ui";
+import { Card, CardHeader, CardBody, Badge, LinkButton } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
 import { AddMealDialog } from "@/components/food/meal-dialogs";
+import { RecipeView } from "@/components/food/recipe-view";
 import { ImageUpload } from "@/components/food/image-upload";
-import { toggleFavouriteAction, deleteRecipeAction, addMissingToListAction } from "../../actions";
+import { toggleFavouriteAction, deleteRecipeAction } from "../../actions";
 
 export default async function RecipePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ servings?: string }> }) {
   const viewer = await requireViewer();
@@ -22,15 +21,13 @@ export default async function RecipePage({ params, searchParams }: { params: Pro
   const recipe = await getRecipe(id);
   if (!recipe) notFound();
   const servings = Number(sp.servings) > 0 ? Number(sp.servings) : recipe.servings;
-  const factor = servings / recipe.servings;
-  const [check, profiles, recipes, notes] = await Promise.all([
-    checkRecipeAgainstPantry(id, servings),
+  const [baseCheck, profiles, recipes, notes] = await Promise.all([
+    checkRecipeAgainstPantry(id),
     prisma.householdProfile.findMany({ select: { id: true, name: true } }),
     prisma.recipe.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     listNotes(viewer, { entityType: "recipe", entityId: id }),
   ]);
   const n = computeRecipeNutrition(recipe);
-  const missing = check.checks.filter((c) => !c.optional && c.status !== "have");
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
       <div className="space-y-5">
@@ -60,39 +57,15 @@ export default async function RecipePage({ params, searchParams }: { params: Pro
           <ImageUpload endpoint={`/api/recipes/${id}/images`} />
         </div>
 
-        <Card>
-          <CardHeader title="Ingredients" sub={<span className="inline-flex items-center gap-1"><Users className="h-3.5 w-3.5" />checked against pantry for {servings} serving(s)</span>} action={
-            <form className="flex items-center gap-2"><Input name="servings" defaultValue={servings} inputMode="decimal" className="h-9 w-16 text-center" aria-label="Servings" /><button className="h-9 rounded-lg border border-line-strong px-3 text-sm">Scale</button></form>
-          } />
-          <ul className="divide-y divide-line border-t border-line">
-            {recipe.ingredients.map((ing, i) => {
-              const c = check.checks[i];
-              const icon = c.status === "have" ? <CircleCheck className="h-4 w-4 text-accent" /> : c.status === "partial" ? <CircleAlert className="h-4 w-4 text-warn" /> : c.status === "unknown" ? <Circle className="h-4 w-4 text-faint" /> : <Circle className="h-4 w-4 text-danger" />;
-              return (
-                <li key={ing.id} className="flex items-center gap-3 px-5 py-2.5">
-                  {icon}
-                  <span className="w-24 shrink-0 tabular text-muted">{ing.quantity !== null ? formatQuantity(round(ing.quantity * factor, 2), ing.unit) : "—"}</span>
-                  <span className="min-w-0 flex-1">{ing.name}{ing.note ? <span className="text-faint">, {ing.note}</span> : null}{ing.optional ? <Badge className="ml-2">optional</Badge> : null}</span>
-                  <span className="text-xs text-faint">{c.status === "have" ? (c.confidence !== "CONFIRMED" ? `in pantry (${c.confidence.toLowerCase()})` : "in pantry") : c.status === "partial" ? `have ${formatQuantity(round(c.available, 2), c.unit)}` : c.status === "unknown" ? "unit mismatch" : ing.quantity === null ? "" : "missing"}</span>
-                </li>
-              );
-            })}
-          </ul>
-          {missing.length ? (
-            <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-3">
-              <p className="text-sm text-muted">{missing.length} ingredient(s) not fully in the pantry.</p>
-              <InlineAction action={addMissingToListAction} fields={{ recipeId: id, servings }} variant="outline"><ShoppingCart className="h-4 w-4" />Add missing to list</InlineAction>
-            </div>
-          ) : null}
-        </Card>
-
-        <Card>
-          <CardHeader title="Method" />
-          <CardBody>
-            {recipe.instructions ? <ol className="space-y-3">{recipe.instructions.split("\n").filter(Boolean).map((s, i) => <li key={i} className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-3 text-xs font-semibold text-muted">{i + 1}</span><span className="leading-relaxed">{s}</span></li>)}</ol> : <p className="text-sm text-muted">No instructions yet.</p>}
-            {recipe.notes ? <div className="mt-5 rounded-xl bg-surface-2 p-4 text-sm"><p className="mb-1 text-xs font-semibold uppercase tracking-wider text-faint">Notes</p><p className="whitespace-pre-wrap">{recipe.notes}</p></div> : null}
-          </CardBody>
-        </Card>
+        <RecipeView initialServings={servings} recipe={{
+          id: recipe.id, name: recipe.name, servings: recipe.servings, temperature: recipe.temperature,
+          steps: recipe.instructions.split("\n").map((x) => x.trim()).filter(Boolean),
+          ingredients: recipe.ingredients.map((ing, idx) => {
+            const c = baseCheck.checks[idx];
+            return { id: ing.id, name: ing.name, note: ing.note, optional: ing.optional, quantity: ing.quantity, unit: ing.unit, gramsPerMl: ing.foodItem?.gramsPerMl ?? null, gramsPerEach: ing.foodItem?.gramsPerEach ?? null, inPantry: c.available, pantryConfidence: c.confidence, pantryKnown: c.status !== "unknown" };
+          }),
+        }} />
+        {recipe.notes ? <Card className="p-5 text-sm"><p className="mb-1 text-xs font-semibold uppercase tracking-wider text-faint">Notes</p><p className="whitespace-pre-wrap">{recipe.notes}</p></Card> : null}
       </div>
 
       <div className="space-y-5">

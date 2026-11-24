@@ -61,6 +61,7 @@ test("recipe → meal plan with per-person portions → grocery list", async ({ 
   await page.getByPlaceholder(/One ingredient per line/).fill("200 g spaghetti\n1 lemon\n2 tbsp olive oil");
   await page.getByRole("button", { name: /Parse/ }).click();
   await expect(page.getByLabel("Ingredient").nth(2)).toHaveValue("olive oil");
+  await page.getByLabel("Instructions").fill("Boil the spaghetti for 10 minutes\nToss with lemon and olive oil");
   await page.getByRole("button", { name: "Save recipe" }).click();
   await page.waitForURL(/\/food\/recipes\/[0-9a-f-]{36}$/);
   await expect(page.getByRole("heading", { name })).toBeVisible();
@@ -182,4 +183,45 @@ test("Apple Health export upload lands in my private records", async ({ page }) 
   await expect(page.getByText(/Imported/).first()).toBeVisible();
   await expect(page.getByText(/1 day of steps/).first()).toBeVisible();
   await expect(page.getByText("Cycling").first()).toBeVisible();
+});
+
+
+test("recipe page: scale servings, switch units, cook mode with timer", async ({ page }, info) => {
+  await unlock(page, "Alex", "1234");
+  await page.goto("/food/recipes");
+  await page.getByText(`Lemon pasta ${info.project.name}`).first().click();
+  await page.waitForURL(/\/food\/recipes\/[0-9a-f-]{36}$/);
+  const pasta = page.locator("li", { hasText: "spaghetti" }).first();
+  await page.getByRole("button", { name: "Original" }).click();
+  await expect(pasta).toContainText("200 g");
+  await page.getByRole("button", { name: "More servings" }).click();
+  await expect(pasta).toContainText("300 g");
+  await page.getByRole("button", { name: "Imperial" }).click();
+  await expect(pasta).toContainText(/oz/);
+  await page.getByRole("button", { name: "Metric" }).click();
+  await page.getByRole("button", { name: "10 minutes" }).first().click();
+  await expect(page.getByText("Step 1").first()).toBeVisible();
+  await page.getByRole("button", { name: "Cook mode" }).click();
+  const cook = page.getByRole("dialog", { name: /Cook mode/ });
+  await expect(cook.getByText("Step 1 of 2")).toBeVisible();
+  await expect(cook.getByText("Boil the spaghetti for 10 minutes")).toBeVisible();
+  await cook.getByRole("button", { name: "Next" }).click();
+  await expect(cook.getByText("Step 2 of 2")).toBeVisible();
+  await cook.getByRole("button", { name: "Ingredients" }).click();
+  await expect(cook.getByRole("complementary", { name: "Ingredients" })).toContainText("spaghetti");
+  await cook.getByRole("button", { name: "Done cooking" }).click();
+  await expect(cook).toBeHidden();
+});
+
+test("share sheet: shared caption → unlock → automatic import → review", async ({ page }) => {
+  const caption = "Garlic Yogurt Dip\nServes 4\nIngredients\n200g greek yogurt\n1 garlic clove\nSteps\n1. Mix everything.\n2. Chill for 30 minutes.";
+  await page.goto(`/food/import?share=${encodeURIComponent(caption)}`);
+  await page.waitForURL(/\/lock\?next=/);
+  await page.getByRole("button", { name: "Alex" }).click();
+  await page.locator("#pin").fill("1234");
+  await page.getByRole("button", { name: "Unlock" }).click();
+  await page.waitForURL(/\/food\/import\/[0-9a-f-]{36}$/, { timeout: 30_000 });
+  await expect(page.getByText("Review imported recipe")).toBeVisible();
+  await expect(page.getByLabel("Recipe name")).toHaveValue("Garlic Yogurt Dip");
+  await expect(page.getByLabel("Ingredient").first()).toHaveValue("greek yogurt");
 });

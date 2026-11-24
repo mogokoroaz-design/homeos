@@ -124,7 +124,7 @@ export function formatQuantity(qty: number | null | undefined, unit: string) {
   if (u === "ml" && q >= 1000) { q /= 1000; u = "l"; }
   const fractions: Record<string, string> = { "0.25": "¼", "0.5": "½", "0.75": "¾", "0.33": "⅓", "0.67": "⅔" };
   let num: string;
-  if (["cup", "tsp", "tbsp", "each", "dozen"].includes(u) || dimensionOf(u) === "other") {
+  if (["cup", "tsp", "tbsp", "each", "dozen", "oz", "lb"].includes(u) || dimensionOf(u) === "other") {
     const whole = Math.floor(q);
     const f = fractions[String(Math.round((q - whole) * 100) / 100)];
     num = f ? (whole ? `${whole}${f}` : f) : String(Math.round(q * 100) / 100);

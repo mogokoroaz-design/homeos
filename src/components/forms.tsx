@@ -17,7 +17,7 @@ export function SubmitButton({ children, variant = "primary", size = "md", class
 }
 
 /** A form bound to a server action returning ActionResult; shows errors inline. */
-export function ActionForm({ action, children, className, resetOnSuccess = true, onSuccess, successMessage, id }: {
+export function ActionForm({ action, children, className, resetOnSuccess = true, onSuccess, successMessage, id, formRef }: {
   action: (prev: ActionResult | null, fd: FormData) => Promise<ActionResult>;
   children: ReactNode;
   className?: string;
@@ -25,9 +25,11 @@ export function ActionForm({ action, children, className, resetOnSuccess = true,
   onSuccess?: (r: ActionResult) => void;
   successMessage?: boolean;
   id?: string;
+  formRef?: React.RefObject<HTMLFormElement | null>;
 }) {
   const [state, formAction] = useActionState(action, null);
-  const ref = useRef<HTMLFormElement>(null);
+  const ownRef = useRef<HTMLFormElement>(null);
+  const ref = formRef ?? ownRef;
   useEffect(() => {
     if (state?.ok) {
       if (resetOnSuccess) ref.current?.reset();

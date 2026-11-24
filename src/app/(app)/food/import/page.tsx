@@ -1,17 +1,19 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { Card, CardHeader, Badge, SectionTitle } from "@/components/ui";
-import { ImportForms } from "@/components/food/import-forms";
+import { ImportForms, ShareSheetGuide } from "@/components/food/import-forms";
 
 export const metadata = { title: "Import recipe" };
 
-export default async function ImportPage() {
+export default async function ImportPage({ searchParams }: { searchParams: Promise<{ share?: string }> }) {
+  const { share } = await searchParams;
   const imports = await prisma.recipeImport.findMany({ orderBy: { createdAt: "desc" }, take: 15 });
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
       <div>
-        <ImportForms />
+        <ImportForms shared={share?.slice(0, 20000)} />
         <p className="mt-3 text-xs text-faint">Every import becomes an editable draft. Nothing is saved to your library until you review and save it.</p>
+        <ShareSheetGuide />
       </div>
       <div>
         <SectionTitle>Recent imports</SectionTitle>

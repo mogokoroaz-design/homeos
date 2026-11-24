@@ -1,5 +1,5 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "../db";
 import { newToken, sha256, verifyPin } from "./pin";
@@ -58,7 +58,9 @@ export async function requireViewer(): Promise<Viewer> {
   const viewer = await getViewer();
   if (!viewer) {
     const household = await prisma.household.count();
-    redirect(household ? "/lock" : "/setup");
+    if (!household) redirect("/setup");
+    const path = (await headers()).get("x-homeos-path");
+    redirect(path && path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/lock") ? `/lock?next=${encodeURIComponent(path)}` : "/lock");
   }
   return viewer;
 }
