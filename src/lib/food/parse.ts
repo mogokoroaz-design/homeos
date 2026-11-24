@@ -24,6 +24,10 @@ export function wordToNumber(w: string): number | null {
 }
 
 export function parseIngredientLine(rawLine: string): ParsedIngredient {
+  const trailing = rawLine.trim().match(/^([\p{L}][\p{L} '&-]{1,50}?)\s*[:\-–]?\s+(\d+(?:[.,]\d+)?|\d+\/\d+|[¼½¾])\s*(kg|g|mg|ml|l|lb|lbs|oz|tsp|tbsp|cups?|cloves?|pcs?)?\.?\s*(\(.*\))?$/iu);
+  if (trailing && !/^\d/.test(rawLine.trim())) {
+    return parseIngredientLine(`${trailing[2]}${trailing[3] ? ` ${trailing[3]}` : ""} ${trailing[1]}${trailing[4] ? ` ${trailing[4]}` : ""}`);
+  }
   const raw = rawLine.trim();
   let s = raw.replace(/^[-•*▢☐□●◦·•]+\s*/, "").replace(/^\d+[.)]\s+(?=\D)/, "").trim();
   let optional = /\boptional\b/i.test(s);
@@ -111,12 +115,63 @@ export interface ParsedRecipe {
   warnings: string[];
 }
 
-const ING_HEADER = /^(ingredients?|you(?:'ll)? need|what you need|shopping list)\s*:?\s*$/i;
-const STEP_HEADER = /^(instructions?|method|directions?|steps?|preparation|how to make( it)?)\s*:?\s*$/i;
-const NOTE_HEADER = /^(notes?|tips?)\s*:?\s*$/i;
+// ── Caption / free-text cleaning ──
 
-function minutesFrom(text: string, label: RegExp) {
-  const m = text.match(new RegExp(`(?:${label.source})[^\\n\\d]{0,20}(\\d+)\\s*(h|hr|hrs|hour|hours|m|min|mins|minutes)\\b(?:\\s*(\\d+)\\s*(m|min|mins|minutes))?`, "i"));
+const NAMED_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", ndash: "–", mdash: "—", hellip: "…", deg: "°", frac12: "½", frac14: "¼", frac34: "¾", rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“", times: "×", rarr: "→" };
+
+/** Decodes HTML entities in all forms: &amp; &#8212; &#x2014; (social platforms send captions this way). */
+export function decodeEntities(s: string) {
+  return s
+    .replace(/&#x([0-9a-f]+);?/gi, (_, h) => safeCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);?/g, (_, d) => safeCodePoint(Number(d)))
+    .replace(/&([a-z][a-z0-9]+);/gi, (m, n) => NAMED_ENTITIES[n.toLowerCase()] ?? m);
+}
+function safeCodePoint(n: number) {
+  try { return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : ""; } catch { return ""; }
+}
+
+/**
+ * Turns a social caption or pasted text into clean lines: decodes entities, converts keycap emoji
+ * (1️⃣) to step numbers, normalises ℃/℉ and arrows, removes other emoji, hashtags and @mentions.
+ */
+export function cleanRecipeText(raw: string) {
+  let s = decodeEntities(raw).replace(/\r/g, "");
+  // Instagram og:description wrapper: `12K likes, 85 comments - user on May 3, 2025: "caption".`
+  const wrapped = s.match(/^[\d.,]+[KkMm]? likes?, [\d.,]+[KkMm]? comments? - .{1,80}? on [^:]{3,40}: ["“]([\s\S]*)["”]\.?\s*$/);
+  if (wrapped) s = wrapped[1];
+  s = s
+    .replace(/(\d{1,2})️?⃣/g, "\n$1. ") // keycap numbers → numbered lines
+    .replace(/🔟/g, "\n10. ")
+    .replace(/℃/g, "°C").replace(/℉/g, "°F")
+    .replace(/\s*[→⇒➡➔►▶]️?\s*/g, " → ")
+    .replace(/[　  -​]/g, " ")
+    .replace(/\p{Extended_Pictographic}|️|‍|⃣|[\u{1F3FB}-\u{1F3FF}]/gu, "")
+    .replace(/(^|\s)#[\p{L}\p{N}_]+/gu, "$1")
+    .replace(/(^|\s)@[\w.]+/g, "$1");
+  return s.split("\n").map((l) => l.replace(/[ \t]+/g, " ").trim()).filter((l) => l && !/^[\p{P}\p{S}\s]+$/u.test(l));
+}
+
+function headingKind(line: string): "ing" | "steps" | "notes" | null {
+  const bare = line.replace(/[\p{P}\p{S}\d]+/gu, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!bare || bare.split(" ").length > 4 || line.length > 40) return null;
+  if (/^(ingredients?( list)?|you( will|ll)? need|what you( will|ll)? need|shopping list)$/.test(bare)) return "ing";
+  if (/^(instructions?|method|directions?|steps?|preparation|prep|how to( make( it)?)?|recipe steps|cooking steps)$/.test(bare)) return "steps";
+  if (/^(notes?|tips?|recipe notes|chef'?s? tips?|storage|substitutions?)$/.test(bare)) return "notes";
+  return null;
+}
+
+const SIGN_OFF = /^(enjoy|bon app[eé]tit|happy (cooking|baking)|save (this|for later)|follow (me|for more)|link in bio|recipe below|full recipe)\b/i;
+
+function minutesIn(s: string) {
+  let total = 0;
+  for (const m of s.matchAll(/(\d+(?:[.,]\d+)?)\s*(?:-|–|to)?\s*(?:\d+\s*)?(h|hr|hrs|hours?|m|min|mins|minutes)\b/gi)) {
+    total += Number(m[1].replace(",", ".")) * (/^h/i.test(m[2]) ? 60 : 1);
+  }
+  return total || null;
+}
+
+function labelledMinutes(text: string, label: RegExp) {
+  const m = text.match(new RegExp(`(?:^|\\n|[,;|•·])\\s*(?:${label.source})\\s*(?:time)?\\s*[:\\-–]?\\s*(\\d+)\\s*(h|hr|hrs|hour|hours|m|min|mins|minutes)\\b(?:\\s*(\\d+)\\s*(m|min|mins|minutes))?`, "i"));
   if (!m) return null;
   let v = Number(m[1]) * (/^h/i.test(m[2]) ? 60 : 1);
   if (m[3]) v += Number(m[3]);
@@ -125,49 +180,64 @@ function minutesFrom(text: string, label: RegExp) {
 
 export function looksLikeIngredient(line: string) {
   const p = parseIngredientLine(line);
-  return p.quantity !== null && line.length < 120 && !/[.!?]$/.test(line.trim());
+  return p.quantity !== null && line.length < 120 && !/[.!?]$/.test(line.trim()) && !/^\d+[.)]\s/.test(line) && !/^(serves|servings|yield|makes|portions?|prep|cook|bake|total|time)\b/i.test(line.trim());
 }
 
-/** Parses free text (captions, transcripts, OCR, pasted web text) into a recipe draft. */
+/** Parses free text (captions, transcripts, OCR, pasted web text) into a structured recipe draft. */
 export function parseRecipeText(text: string, fallbackName = "Imported recipe"): ParsedRecipe {
   const warnings: string[] = [];
-  const lines = text.replace(/\r/g, "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = cleanRecipeText(text);
   let section: "head" | "ing" | "steps" | "notes" = "head";
+  let group = "";
   const ingredients: ParsedIngredient[] = [];
   const steps: string[] = [];
   const notes: string[] = [];
   const head: string[] = [];
+  const pushIng = (l: string) => {
+    const p = parseIngredientLine(l);
+    ingredients.push(group ? { ...p, note: [p.note, `for ${group}`].filter(Boolean).join("; ") } : p);
+  };
   for (const line of lines) {
-    if (ING_HEADER.test(line)) { section = "ing"; continue; }
-    if (STEP_HEADER.test(line)) { section = "steps"; continue; }
-    if (NOTE_HEADER.test(line)) { section = "notes"; continue; }
+    const kind = headingKind(line);
+    if (kind) { section = kind; group = ""; continue; }
+    if (SIGN_OFF.test(line)) continue;
+    const isNumbered = /^(\d{1,2}[.)]\s*|step\s*\d+\s*[:.-]?\s*)/i.test(line);
     if (section === "head") {
-      if (looksLikeIngredient(line)) { section = "ing"; ingredients.push(parseIngredientLine(line)); }
+      if (looksLikeIngredient(line)) { section = "ing"; pushIng(line); }
+      else if (isNumbered && head.length) { section = "steps"; steps.push(cleanStep(line)); }
       else head.push(line);
     } else if (section === "ing") {
-      if (looksLikeIngredient(line) || (line.length < 60 && !/[.!?]$/.test(line) && /^[-•*▢]/.test(line))) ingredients.push(parseIngredientLine(line));
-      else if (/^(\d+[.)]|step\s*\d+)/i.test(line) || line.length > 60) { section = "steps"; steps.push(cleanStep(line)); }
-      else ingredients.push(parseIngredientLine(line));
-    } else if (section === "steps") steps.push(cleanStep(line));
-    else notes.push(line);
+      // Sub-group headers such as "For the filling:"
+      const g = line.match(/^(?:for )?((?:the )?[\p{L} ]{3,30}):$/iu);
+      if (g && !looksLikeIngredient(line)) { group = g[1].trim().toLowerCase(); continue; }
+      if (isNumbered && !looksLikeIngredient(line.replace(/^\d{1,2}[.)]\s*/, ""))) { section = "steps"; steps.push(cleanStep(line)); continue; }
+      if (looksLikeIngredient(line) || (line.length < 60 && !/[.!?]$/.test(line))) pushIng(line.replace(/^[-•*▢☐]\s*/, ""));
+      else notes.push(line);
+    } else if (section === "steps") {
+      // Unnumbered continuation lines join the previous step only when steps are numbered.
+      if (!isNumbered && steps.length && line.length < 40 && !/[.!]$/.test(line)) notes.push(line);
+      else steps.push(cleanStep(line));
+    } else notes.push(line);
   }
-  // Without explicit headings, sentences in the head are probably steps.
-  if (!steps.length && head.length > 1) {
-    steps.push(...head.slice(1).filter((l) => l.length > 25).map(cleanStep));
-  }
+  if (!steps.length && head.length > 1) steps.push(...head.slice(1).filter((l) => l.length > 25).map(cleanStep));
   const nameLine = head.find((l) => l.length > 2 && l.length < 90 && !/^(serves|servings|prep|cook|total|yield)/i.test(l) && !/https?:/.test(l)) ?? fallbackName;
-  const servingsMatch = text.match(/\b(?:serves|servings|yield|makes)\s*:?\s*(\d+)/i) ?? text.match(/(\d+)\s*servings/i);
-  const temp = text.match(/(\d{3})\s*°?\s*(F|C)\b|(\d{3})\s*degrees\s*(F|C|fahrenheit|celsius)?/i);
+  const joined = lines.join("\n");
+  const servingsMatch = joined.match(/\b(?:serves|servings|yield|makes|portions?)\s*:?\s*(\d+)/i) ?? joined.match(/(\d+)\s*(?:servings|portions|people)\b/i);
+  const temps = [...joined.matchAll(/(\d{2,3})\s*°\s*([CF])\b(?:\s*(?:\/|or|\()\s*(\d{2,3})\s*°\s*([CF]))?|(\d{3})\s*(?:degrees\s*(f|c|fahrenheit|celsius)?|°?\s*(?=[FC]\b)([FC]))/gi)];
+  const t = temps[0];
+  const temperature = !t ? "" : t[1] ? `${t[1]}°${t[2].toUpperCase()}${t[3] ? ` / ${t[3]}°${t[4].toUpperCase()}` : ""}` : `${t[5]}°${(t[6] ?? t[7] ?? "F")[0].toUpperCase()}`;
+  const cookFromSteps = steps.filter((s) => /\b(bake|roast|cook|simmer|boil|fry|grill|air[- ]?fry|steam|broil|saut[eé])/i.test(s) && !/\b(chill|rest|cool|marinate|refrigerat|freeze|soak)/i.test(s)).map(minutesIn).reduce<number>((a, b) => a + (b ?? 0), 0);
   if (!ingredients.length) warnings.push("No ingredient list was recognised — add ingredients manually.");
   if (!steps.length) warnings.push("No instructions were recognised.");
+  if (!servingsMatch) warnings.push("Servings weren't stated — set them so portions and shopping scale correctly.");
   const unmatchedQty = ingredients.filter((i) => i.quantity === null && !i.optional).length;
   if (unmatchedQty) warnings.push(`${unmatchedQty} ingredient(s) have no quantity — please check.`);
   return {
-    name: nameLine.replace(/^#+\s*/, "").replace(/[🍗🍝🥘🍲🥗🔥✨👇⬇️]/gu, "").trim().slice(0, 120),
+    name: nameLine.replace(/^#+\s*/, "").replace(/[\s\p{P}]+$/u, "").trim().slice(0, 120) || fallbackName,
     servings: servingsMatch ? Number(servingsMatch[1]) : null,
-    prepMinutes: minutesFrom(text, /prep(?:aration)?(?:\s*time)?/),
-    cookMinutes: minutesFrom(text, /cook(?:ing)?(?:\s*time)?|bake/),
-    temperature: temp ? (temp[1] ? `${temp[1]}°${temp[2].toUpperCase()}` : `${temp[3]}°${(temp[4] ?? "F")[0].toUpperCase()}`) : "",
+    prepMinutes: labelledMinutes(joined, /prep(?:aration)?/),
+    cookMinutes: labelledMinutes(joined, /cook(?:ing)?|bake|baking/) ?? (cookFromSteps || null),
+    temperature,
     ingredients,
     instructions: steps,
     notes: notes.join("\n"),
@@ -176,7 +246,7 @@ export function parseRecipeText(text: string, fallbackName = "Imported recipe"):
 }
 
 function cleanStep(line: string) {
-  return line.replace(/^(\d+[.)]\s*|step\s*\d+\s*[:.-]?\s*|[-•*]\s*)/i, "").trim();
+  return line.replace(/^(\d{1,2}[.)]\s*|step\s*\d+\s*[:.-]?\s*|[-•*]\s*)/i, "").trim();
 }
 
 export interface ParsedInventoryChange {

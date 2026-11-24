@@ -5,7 +5,7 @@
 import { lookup } from "node:dns/promises";
 import net from "node:net";
 import { prisma } from "../db";
-import { parseRecipeText, parseIngredientLine, type ParsedRecipe } from "./parse";
+import { parseRecipeText, parseIngredientLine, decodeEntities, type ParsedRecipe } from "./parse";
 import { ocrImage } from "../finance/ocr";
 import { saveUpload } from "../files";
 import { getLocalModel, extractJson } from "../ai/provider";
@@ -51,9 +51,6 @@ async function safeFetch(url: string) {
   return text.slice(0, 3_000_000);
 }
 
-function decodeEntities(s: string) {
-  return s.replace(/&quot;/g, '"').replace(/&#39;|&#x27;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
-}
 function stripTags(s: string) {
   return decodeEntities(s.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 }
@@ -220,4 +217,14 @@ export async function importFromVideo(file: { buffer: Buffer; name: string; type
   if (!transcript.trim()) return finish("VIDEO", viewer, "", null, [...warnings, "Add the transcript or caption text to extract the recipe."], { fileId: stored.id, error: "Transcript required" });
   const parsed = parseRecipeText(transcript);
   return finish("VIDEO", viewer, transcript, fromParsed(parsed, "VIDEO", null), [...warnings, ...parsed.warnings], { fileId: stored.id });
+}
+
+/** Re-runs extraction on an import's stored source text (e.g. after parser improvements). */
+export async function reextractImport(importId: string) {
+  const imp = await prisma.recipeImport.findUniqueOrThrow({ where: { id: importId } });
+  if (!imp.rawText.trim()) throw new Error("This import has no stored text to re-read. Try another import method.");
+  const parsed = parseRecipeText(imp.rawText);
+  const prev = JSON.parse(imp.extracted || "{}") as Partial<RecipeDraft>;
+  const draft = fromParsed(parsed, prev.sourceType ?? imp.method, imp.sourceUrl);
+  await prisma.recipeImport.update({ where: { id: importId }, data: { extracted: JSON.stringify(draft), warnings: JSON.stringify(parsed.warnings), status: imp.status === "SAVED" ? "SAVED" : "PENDING_REVIEW", error: null } });
 }

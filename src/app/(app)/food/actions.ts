@@ -15,7 +15,7 @@ import { searchReference } from "@/lib/food/reference";
 import { logPlannedMeal, logFood, deleteLogItem } from "@/lib/food/foodlog";
 import { proposeAction } from "@/lib/ai/actions";
 import { proposeMealPlan, parsePlanRequest } from "@/lib/food/planner";
-import { importFromUrl, importFromText } from "@/lib/food/importer";
+import { importFromUrl, importFromText, reextractImport } from "@/lib/food/importer";
 import { parseMoneyToCents } from "@/lib/money";
 import { round } from "@/lib/utils";
 import { audit } from "@/lib/audit";
@@ -266,4 +266,9 @@ export async function substitutesAction(mealId: string) {
   await requireViewer();
   const { suggestSubstitutes } = await import("@/lib/food/mealplan");
   return (await suggestSubstitutes(mealId)).map((s) => ({ id: s.recipe.id, name: s.recipe.name, shared: s.shared }));
+}
+
+export async function reextractImportAction(fd: FormData) {
+  await requireViewer();
+  await runVoid(() => reextractImport(String(fd.get("id"))));
 }

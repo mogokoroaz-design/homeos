@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { RecipeEditor, EMPTY_RECIPE, type EditorRecipe } from "@/components/food/recipe-editor";
 import { Card, CardBody, Badge, LinkButton } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
-import { discardImportAction } from "../../actions";
+import { discardImportAction, reextractImportAction } from "../../actions";
 
 export default async function ImportReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -21,6 +21,7 @@ export default async function ImportReviewPage({ params }: { params: Promise<{ i
             <Badge>{imp.method.toLowerCase()}</Badge>
             <Badge tone={imp.status === "FAILED" ? "danger" : imp.status === "SAVED" ? "accent" : "warn"}>{imp.status === "PENDING_REVIEW" ? "needs review" : imp.status.toLowerCase()}</Badge>
             <div className="ml-auto flex gap-2">
+              {imp.status !== "SAVED" && imp.rawText ? <InlineAction action={reextractImportAction} fields={{ id }} variant="outline">Re-extract</InlineAction> : null}
               {imp.status !== "SAVED" ? <InlineAction action={discardImportAction} fields={{ id }} variant="ghost">Discard</InlineAction> : null}
               <LinkButton href="/food/import" size="sm" variant="ghost">Try another method</LinkButton>
             </div>
@@ -30,7 +31,7 @@ export default async function ImportReviewPage({ params }: { params: Promise<{ i
           {imp.rawText ? <details className="mt-3"><summary className="cursor-pointer text-sm text-muted">Show extracted source text</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-3 text-xs text-muted">{imp.rawText}</pre></details> : null}
         </CardBody>
       </Card>
-      {imp.status === "SAVED" && imp.recipeId ? <LinkButton href={`/food/recipes/${imp.recipeId}`} variant="primary">Open saved recipe</LinkButton> : <RecipeEditor initial={initial} importId={id} />}
+      {imp.status === "SAVED" && imp.recipeId ? <LinkButton href={`/food/recipes/${imp.recipeId}`} variant="primary">Open saved recipe</LinkButton> : <RecipeEditor key={imp.extracted} initial={initial} importId={id} />}
     </div>
   );
 }
