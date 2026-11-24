@@ -63,7 +63,7 @@ export function HealthCard({ lastImport, lastSync, lastSyncData, hasKey }: { las
         {error ? <p className="text-sm text-danger">{error}</p> : null}
         {shown ? (
           <div className="rounded-xl bg-surface-2 px-4 py-3 text-sm">
-            <p className="font-medium text-accent">{result ? "Imported" : "Last import"}{shown.at ? ` · ${new Date(shown.at).toLocaleString()}` : ""}</p>
+            <p className="font-medium text-accent">{result || (shown.at && Date.now() - new Date(shown.at).getTime() < 5 * 60_000) ? "Imported" : "Last import"}{shown.at ? ` · ${new Date(shown.at).toLocaleString()}` : ""}</p>
             <p className="mt-1 text-muted">{shown.firstDate && shown.lastDate ? `${shown.firstDate} → ${shown.lastDate} · ` : ""}{Object.entries(shown.byType).map(([k, v]) => describe(k, v)).join(" · ")}{shown.workouts ? ` · ${shown.workouts} workout${shown.workouts === 1 ? "" : "s"}` : ""}</p>
           </div>
         ) : null}

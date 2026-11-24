@@ -15,16 +15,30 @@ async function lock(page: Page) {
   await page.waitForURL("**/lock");
 }
 
-test("setup creates a household with two PIN-protected profiles", async ({ page }, info) => {
+test("setup needs only names; each person adds their own PIN from their profile", async ({ page }) => {
   await page.goto("/");
   if (page.url().includes("/lock")) return; // second project reuses the household
   await page.waitForURL("**/setup");
+  await expect(page.locator("input[type=password]")).toHaveCount(0);
   await page.fill("input[name=householdName]", "E2E Home");
-  await page.fill("input[name=name0]", "Alex"); await page.fill("input[name=pin0]", "1234"); await page.fill("input[name=pin0confirm]", "1234");
-  await page.fill("input[name=name1]", "Sam"); await page.fill("input[name=pin1]", "5678"); await page.fill("input[name=pin1confirm]", "5678");
+  await page.fill("input[name=name0]", "Alex");
+  await page.fill("input[name=name1]", "Sam");
   await page.getByRole("button", { name: "Create household" }).click();
   await page.waitForURL("**/lock");
-  info.annotations.push({ type: "setup", description: "created" });
+  await expect(page.getByText("No PIN")).toHaveCount(2);
+  for (const [name, pin] of [["Alex", "1234"], ["Sam", "5678"]] as const) {
+    await page.getByRole("button", { name }).click(); // no PIN → opens straight away
+    await page.waitForURL("**/today");
+    await page.goto("/people#security");
+    await expect(page.getByText(/anyone on this device can open your profile/)).toBeVisible();
+    await page.getByRole("button", { name: "Add a PIN" }).click();
+    await page.getByLabel("PIN (4–8 digits)").fill(pin);
+    await page.getByLabel("Repeat PIN").fill(pin);
+    await page.getByRole("button", { name: "Save PIN" }).click();
+    await expect(page.getByText(/PIN added/)).toBeVisible();
+    await lock(page);
+  }
+  await expect(page.getByText("No PIN")).toHaveCount(0);
 });
 
 test("wrong PIN is rejected; correct PIN unlocks", async ({ page }) => {
@@ -100,6 +114,10 @@ test("project builder: natural language → private project → entry", async ({
   await page.getByPlaceholder(/daily journal/).fill("I want to create a daily journal where I can record my mood, what happened during the day, what I learned, what I am grateful for and how I felt.");
   await page.getByRole("button", { name: "Propose structure" }).click();
   await expect(page.getByText("Proposed project")).toBeVisible();
+  await page.getByLabel("Refine instruction").fill("add a photo; make mood out of 10");
+  await page.getByRole("button", { name: "Apply" }).click();
+  await expect(page.getByText(/Added “Photo”/)).toBeVisible();
+  await expect(page.getByText(/1–10 rating/)).toBeVisible();
   await page.getByRole("button", { name: /Approve/ }).click();
   await page.waitForURL(/\/projects\/[0-9a-f-]{36}$/);
   await page.getByLabel("What happened").fill("Long walk by the river");

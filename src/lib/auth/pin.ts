@@ -9,7 +9,14 @@ export function hashPin(pin: string, salt = randomBytes(16).toString("hex")) {
   return { hash, salt };
 }
 
-export function verifyPin(pin: string, hash: string, salt: string) {
+/** A profile with no PIN accepts any confirmation (it has chosen not to be locked). */
+export function confirmPin(profile: { pinHash: string | null; pinSalt: string | null }, pin: string | null | undefined) {
+  if (!profile.pinHash || !profile.pinSalt) return true;
+  return verifyPin(String(pin ?? ""), profile.pinHash, profile.pinSalt);
+}
+
+export function verifyPin(pin: string, hash: string | null, salt: string | null) {
+  if (!hash || !salt) return false;
   const candidate = scryptSync(pin, salt, 32, { N: 16384, r: 8, p: 1 });
   const expected = Buffer.from(hash, "hex");
   return expected.length === candidate.length && timingSafeEqual(candidate, expected);

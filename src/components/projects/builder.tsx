@@ -1,11 +1,11 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Loader2, Plus, Lock } from "lucide-react";
+import { Sparkles, Loader2, Plus, Lock, Wand2 } from "lucide-react";
 import { Button, Textarea, Input, Card, Field, Badge, Checkbox } from "../ui";
 import { VoiceButton } from "../assistant/voice";
 import { FieldEditor } from "./field-editor";
-import { proposeProjectAction, createProjectAction } from "@/app/(app)/projects/actions";
+import { proposeProjectAction, createProjectAction, refineProjectAction } from "@/app/(app)/projects/actions";
 import type { ProjectDef, FieldDef } from "@/lib/projects/schema";
 
 const EXAMPLES = [
@@ -18,6 +18,8 @@ export function ProjectBuilder() {
   const [def, setDef] = useState<ProjectDef | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [engine, setEngine] = useState("");
+  const [refine, setRefine] = useState("");
+  const [refineResult, setRefineResult] = useState<{ changes: string[]; notUnderstood: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -25,7 +27,16 @@ export function ProjectBuilder() {
     setError(null);
     const r = await proposeProjectAction(t);
     if (!r.ok) { setError(r.error); return; }
-    setDef(r.data!.proposal); setNotes(r.data!.notes); setEngine(r.data!.engine);
+    setDef(r.data!.proposal); setNotes(r.data!.notes); setEngine(r.data!.engine); setRefineResult(null);
+  });
+  const applyRefine = () => start(async () => {
+    if (!def || !refine.trim()) return;
+    setError(null);
+    const r = await refineProjectAction(JSON.stringify(def), refine);
+    if (!r.ok) { setError(r.error); return; }
+    setDef(r.data!.proposal);
+    setRefineResult({ changes: r.data!.changes, notUnderstood: r.data!.notUnderstood });
+    if (r.data!.changes.length) setRefine("");
   });
   const create = () => start(async () => {
     if (!def) return;
@@ -50,6 +61,17 @@ export function ProjectBuilder() {
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Name"><Input value={def.name} onChange={(e) => setDef({ ...def, name: e.target.value })} /></Field>
             <Field label="Description"><Input value={def.description} onChange={(e) => setDef({ ...def, description: e.target.value })} /></Field>
+          </div>
+          <div className="space-y-2 rounded-xl border border-line-strong bg-surface-2 p-3">
+            <p className="flex items-center gap-2 text-sm font-medium"><Wand2 className="h-4 w-4 text-accent" />Refine in your own words</p>
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); applyRefine(); }}>
+              <Input value={refine} onChange={(e) => setRefine(e.target.value)} placeholder="e.g. add a photo and minutes walked; remove notes; make energy 1-10" aria-label="Refine instruction" />
+              <VoiceButton onText={(t) => setRefine((x) => (x ? `${x}; ${t}` : t))} />
+              <Button type="submit" variant="secondary" disabled={pending || !refine.trim()}>Apply</Button>
+            </form>
+            <p className="text-xs text-faint">Understands: add …, remove …, rename X to Y, make X a rating / yes-no / number / photo / choice of a, b, c, make X 1-10, make X required, reminder at 8pm, no reminder, call it …</p>
+            {refineResult?.changes.length ? <ul className="space-y-0.5 text-sm text-accent">{refineResult.changes.map((c) => <li key={c}>✓ {c}</li>)}</ul> : null}
+            {refineResult?.notUnderstood.length ? <p className="text-sm text-warn">Didn&apos;t understand: “{refineResult.notUnderstood.join("”, “")}”. Try the phrasings above{engine === "rules" ? ", or turn on local AI in Settings for free-form requests" : ""}.</p> : null}
           </div>
           <div className="space-y-2">
             {def.fields.map((f, i) => (

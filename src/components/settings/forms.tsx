@@ -5,7 +5,7 @@ import { Loader2, Upload } from "lucide-react";
 import { ActionForm, SubmitButton } from "../forms";
 import { DialogButton } from "../dialog";
 import { Field, Input, Select, Button, buttonClass } from "../ui";
-import { saveAISettingsAction, testOllamaAction, saveSecurityAction, changePinAction, restoreAction, eraseMyDataAction } from "@/app/(app)/settings/actions";
+import { saveAISettingsAction, testOllamaAction, saveSecurityAction, restoreAction, eraseMyDataAction } from "@/app/(app)/settings/actions";
 
 export function AISettings({ provider, url, model }: { provider: string; url: string; model: string }) {
   const [u, setU] = useState(url);
@@ -28,29 +28,24 @@ export function AISettings({ provider, url, model }: { provider: string; url: st
 
 export function SecuritySettings({ minutes }: { minutes: string }) {
   return (
-    <div className="grid gap-6 sm:grid-cols-2">
+    <div className="flex flex-wrap items-end gap-6">
       <ActionForm action={saveSecurityAction} resetOnSuccess={false} successMessage className="flex items-end gap-2">
         <Field label="Auto-lock after inactivity (minutes)"><Input name="minutes" inputMode="numeric" defaultValue={minutes} className="w-32" /></Field>
         <SubmitButton variant="secondary">Save</SubmitButton>
       </ActionForm>
-      <ActionForm action={changePinAction} successMessage className="grid grid-cols-3 items-end gap-2">
-        <Field label="Current PIN"><Input name="current" type="password" inputMode="numeric" required /></Field>
-        <Field label="New PIN"><Input name="next" type="password" inputMode="numeric" required /></Field>
-        <Field label="Confirm"><Input name="confirm" type="password" inputMode="numeric" required /></Field>
-        <div className="col-span-3 flex justify-end"><SubmitButton variant="secondary">Change my PIN</SubmitButton></div>
-      </ActionForm>
+      <a href="/people#security" className="pb-3 text-sm text-info hover:underline">Add or change your PIN on your profile →</a>
     </div>
   );
 }
 
-export function RestoreDialog({ name }: { name: string }) {
+export function RestoreDialog({ name, hasPin }: { name: string; hasPin: boolean }) {
   return (
     <DialogButton label="Restore" title={`Restore ${name}?`} variant="outline" size="sm">
       {() => (
         <ActionForm action={restoreAction} className="space-y-3">
           <input type="hidden" name="name" value={name} />
           <p className="text-sm text-muted">This replaces ALL current HomeOS data (both profiles) with the backup. A safety backup of the current state is made first. Everyone will need to unlock again.</p>
-          <Field label="Your PIN to confirm"><Input name="pin" type="password" inputMode="numeric" required /></Field>
+          {hasPin ? <Field label="Your PIN to confirm"><Input name="pin" type="password" inputMode="numeric" required /></Field> : <Field label="Type RESTORE to confirm"><Input name="confirm" required /></Field>}
           <div className="flex justify-end"><SubmitButton variant="danger" pendingText="Restoring…">Restore backup</SubmitButton></div>
         </ActionForm>
       )}
@@ -81,13 +76,13 @@ export function ImportBackup() {
   );
 }
 
-export function EraseMyData() {
+export function EraseMyData({ hasPin }: { hasPin: boolean }) {
   return (
     <DialogButton label="Erase my personal data" title="Erase your personal data" variant="danger">
       {() => (
         <ActionForm action={eraseMyDataAction} className="space-y-3">
           <p className="text-sm text-muted">Deletes your food logs, targets, wellness metrics, workouts, habits, routines, projects, private notes, private events and assistant history. Shared household data (recipes, pantry, ledger, tasks) is kept. A backup is taken first.</p>
-          <Field label="Your PIN"><Input name="pin" type="password" inputMode="numeric" required /></Field>
+          {hasPin ? <Field label="Your PIN"><Input name="pin" type="password" inputMode="numeric" required /></Field> : null}
           <Field label="Type ERASE to confirm"><Input name="confirm" required /></Field>
           <div className="flex justify-end"><SubmitButton variant="danger">Erase permanently</SubmitButton></div>
         </ActionForm>

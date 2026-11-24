@@ -17,7 +17,7 @@ npm run setup        # creates .env and data/, applies DB migrations, builds the
 npm start            # http://localhost:3000
 ```
 
-On first open you'll create the household and each person's 4–8 digit PIN.
+On first open you'll name the household and each person — no PINs needed. Each person can add a PIN later from their profile (People → Privacy & PIN) to lock their private records.
 
 Development mode with hot reload: `npm run dev`.
 
@@ -38,6 +38,12 @@ npm run start:https                      # https://<your-mac-name>.local:3443
 Then AirDrop `$(mkcert -CAROOT)/rootCA.pem` to the iPad, install the profile (*Settings → Profile Downloaded*), and enable full trust in *Settings → General → About → Certificate Trust Settings*. Receipt photos use the camera through the normal file picker and work over plain HTTP too.
 
 To start HomeOS automatically at login you can add `npm start` (run in the project folder) as a Login Item via a small Automator app or `launchd` plist — optional.
+
+### Apple Health & Fitness
+
+People → **Apple Health**:
+1. **History** — in the iPhone Health app tap your profile picture → *Export All Health Data*, AirDrop the `export.zip` to the Mac and upload it. Steps, active energy, weight, resting heart rate, water, sleep and workouts go into that person's private records. iPhone + Apple Watch overlaps are not double counted; re-importing updates instead of duplicating.
+2. **Daily sync** — create a sync key, then follow the in-app guide to build a small iPhone Shortcut (free, built into iOS) that sends each day's totals to `http://<your-mac>.local:3000/api/health/sync` on a nightly automation. Apple doesn't let websites read Health data directly, and a native app would need a paid Apple developer account, so this is the zero-cost route.
 
 ### Optional: local AI with Ollama (free)
 
@@ -62,7 +68,7 @@ Then *Settings → Assistant & AI → Rules + local AI*, press **Test connection
 | **Food Hub** | Weekly/monthly meal planner with per-person servings sized from each person's own targets, leftovers, prep notes, substitutions, copy week, cost estimate; recipe library (photos, tags, favourites, scaling, pantry check, linked notes); importer (web links via schema.org data, Instagram/YouTube captions where accessible, pasted text/transcripts, screenshots via local OCR, video + transcript) with editable preview; pantry with locations, expiry, low-stock alerts, confidence levels, conversational/voice entry, barcode scanning where supported, full transaction history; grocery manager generated from the plan minus pantry, unit conversion, package-size pricing, duplicate merging, shopping completion → pantry + ledger + price history; nutrition log per person; kitchen assistant; ingredient catalogue linked to USDA data. |
 | **Home** | Recurring tasks (daily/weekly on chosen days/monthly/yearly, intervals, end dates, skip), cleaning/kitchen/laundry/gardening/maintenance categories, rooms, assignees, completion history; service providers with standing instructions, scheduled visits on the calendar, completion with payment into the ledger and next appointment; appliances with warranties; maintenance records with costs and next-service dates. |
 | **Money** | One shared household ledger (paid-by per entry), categories, monthly budgets, budget vs actual, trends; receipt/bill photo → local OCR → review → approve; original image preserved; card numbers masked to last 4; duplicate detection (identical image, and same merchant/date/total); bills with schedules, reminders, attachments and payment history (tracking only — never pays); price history by product/brand/variant/package/store with unit-price normalisation, best value, per-store lows, increases and switching savings. |
-| **Projects** | Describe a tracker in plain words → proposed structure → edit → approve. 14 field types (incl. checklist, image, tags and safe formulas). Private to the owner. Reminders appear only on the owner's calendar. Optional *approved* aggregate sharing (count/sum/average per week) to Insights — never entry content. |
+| **Projects** | Describe a tracker in plain words → proposed structure (≈35 built-in templates such as gratitude, dream, workout, cycle, skincare, weekly review, side business, plant care, plus typed fields from any list you write) → refine in plain words (“add a photo, make energy 1-10, remove notes”) → approve. 14 field types (incl. checklist, image, tags and safe formulas). Private to the owner. Reminders appear only on the owner's calendar. Optional *approved* aggregate sharing (count/sum/average per week) to Insights — never entry content. |
 | **Calendar** | One view of household & private events (recurring, complete/skip/move), meals & prep, tasks, bills (incl. projected recurrences), service visits, maintenance, reminders, and — only for you — workouts, routines and project reminders. |
 | **Insights** | Spending trends, budget performance, grocery price increases, switching savings, pantry waste, task completion, service visits, your nutrition/weight/exercise/habits, project activity and shared summaries. Every chart says when there isn't enough data. |
 | **Notes** | Global slide-over panel from every screen plus a full page: quick/long notes, checklists, images, tags, pin, search, private or shared, links to recipes/projects/products (auto-offered on those pages). |
@@ -118,7 +124,7 @@ Pages read through services; mutations go through server actions that validate w
 
 ## 5. Privacy & security model
 
-- **Profiles are locked by PIN**, stored as salted scrypt hashes. 5 wrong attempts → 5-minute lockout. Sessions are random tokens (stored hashed) in an httpOnly cookie, expire after inactivity (default 30 min, configurable) and are cleared by Lock/Switch.
+- **Each person can lock their profile with a PIN** (optional; added, changed or removed from People → Privacy & PIN). A profile without a PIN opens with one tap and shows a reminder that anyone on the device can open it. PINs are stored as salted scrypt hashes. 5 wrong attempts → 5-minute lockout. Sessions are random tokens (stored hashed) in an httpOnly cookie, expire after inactivity (default 30 min, configurable) and are cleared by Lock/Switch.
 - **Authorization is enforced server-side in services**, not by which profile is selected: wellness metrics, workouts, habits, routines, food logs and targets require `owner === viewer` or an explicit `ProfileAccess` grant for that category (wellness / nutrition / fitness / habits), which only the owner can switch on. Projects are owner-only with no override. Private notes, events, reminders and uploaded files are filtered by owner + visibility; files are only served via `/api/files/:id` after that check.
 - Shared household data (recipes, pantry, meal plan, groceries, ledger, bills, tasks, providers, shared notes/events) is visible to all members.
 - Audit log of important changes; private items are logged without content.

@@ -81,7 +81,7 @@ export async function unlockProfile(profileId: string, pin: string): Promise<Unl
     const mins = Math.ceil((profile.pinLockedUntil.getTime() - Date.now()) / 60000);
     return { ok: false, error: `Too many attempts. Try again in ${mins} min.` };
   }
-  if (!verifyPin(pin, profile.pinHash, profile.pinSalt)) {
+  if (profile.pinHash && !verifyPin(pin, profile.pinHash, profile.pinSalt)) {
     const attempts = profile.failedPinAttempts + 1;
     await prisma.householdProfile.update({
       where: { id: profileId },

@@ -6,7 +6,7 @@ import { run, runVoid } from "@/lib/action";
 import { prisma } from "@/lib/db";
 import type { ActionResult } from "@/lib/validation";
 import { dateString } from "@/lib/validation";
-import { buildProjectProposal } from "@/lib/projects/builder";
+import { buildProjectProposal, refineProposal } from "@/lib/projects/builder";
 import { projectDef, type ProjectDef } from "@/lib/projects/schema";
 import { createProjectFromDef, getOwnProject, saveEntry, deleteEntry, upsertField, archiveField, moveField, setIntegrationStatus, addIntegration } from "@/lib/projects/projects";
 import { getLocalModel, extractJson } from "@/lib/ai/provider";
@@ -22,7 +22,7 @@ export async function proposeProjectAction(description: string): Promise<ActionR
       try {
         const out = await model.complete({
           system: `Design a personal tracking project. Reply with JSON: {"name": string, "description": string, "fields": [{"key": snake_case, "label": string, "type": one of SHORT_TEXT LONG_TEXT NUMBER RATING SINGLE_SELECT MULTI_SELECT BOOLEAN DATE TIME DURATION CHECKLIST IMAGE TAGS, "required": boolean, "config": {"min"?: number, "max"?: number, "unit"?: string, "options"?: string[]}}]}. Use only what the user describes.`,
-          prompt: description, json: true, maxTokens: 900,
+          prompt: description, json: true, maxTokens: 900, timeoutMs: 45_000,
         });
         const j = extractJson(out) as Partial<ProjectDef>;
         const refined = projectDef.parse({ ...base.proposal, name: j.name || base.proposal.name, fields: j.fields });
@@ -32,6 +32,31 @@ export async function proposeProjectAction(description: string): Promise<ActionR
       }
     }
     return { ...base, engine: "rules" };
+  });
+}
+
+/** Applies plain-language edits ("add a photo, make energy 1-10") to a proposal before it is created. */
+export async function refineProjectAction(json: string, instruction: string): Promise<ActionResult<{ proposal: ProjectDef; changes: string[]; notUnderstood: string[]; engine: string }>> {
+  await requireViewer();
+  return run(async () => {
+    const current = projectDef.parse(JSON.parse(json));
+    if (!instruction.trim()) throw new Error("Describe the change, e.g. “add a photo and make energy 1-10”");
+    const rules = refineProposal(current, instruction);
+    if (!rules.notUnderstood.length) return { ...rules, engine: "rules" };
+    const model = await getLocalModel();
+    if (model) {
+      try {
+        const out = await model.complete({
+          system: `You edit a personal tracking project definition. Apply the user's instruction and reply with the COMPLETE updated JSON object only, same shape: {"name","description","icon","fields":[{"key","label","type","required","config"}],"reminder","integrations"}. Allowed field types: SHORT_TEXT LONG_TEXT NUMBER RATING SINGLE_SELECT MULTI_SELECT BOOLEAN DATE TIME DURATION CHECKLIST IMAGE TAGS FORMULA. Keep existing keys unchanged.`,
+          prompt: `Project: ${JSON.stringify(rules.proposal)}\nInstruction: ${rules.notUnderstood.join("; ")}`, json: true, maxTokens: 1200, timeoutMs: 45_000,
+        });
+        const proposal = projectDef.parse(extractJson(out));
+        return { proposal, changes: [...rules.changes, `Local AI applied: ${rules.notUnderstood.join("; ")}`], notUnderstood: [], engine: model.label };
+      } catch {
+        /* keep the rule-based result */
+      }
+    }
+    return { ...rules, engine: "rules" };
   });
 }
 

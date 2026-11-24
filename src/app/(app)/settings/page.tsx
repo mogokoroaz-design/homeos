@@ -37,7 +37,7 @@ export default async function SettingsPage() {
           </CardBody>
         </Card>
         <Card>
-          <CardHeader icon={<Shield className="h-4 w-4 text-accent" />} title="Security" sub="Private records are protected by each person's PIN and server-side access checks, not just profile selection." />
+          <CardHeader icon={<Shield className="h-4 w-4 text-accent" />} title="Security" sub="A person's private records are protected by their PIN plus server-side access checks. Profiles without a PIN open with one tap." />
           <CardBody><SecuritySettings minutes={lock} /></CardBody>
         </Card>
         <Card>
@@ -47,7 +47,7 @@ export default async function SettingsPage() {
               <li key={b.name} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
                 <span className="min-w-56 flex-1">{new Date(b.createdAt).toLocaleString()} <Badge>{b.label}</Badge><span className="block text-xs text-faint">{b.name} · {(b.dbBytes / 1024).toFixed(0)} KB db · {Object.entries(b.counts).map(([k, v]) => `${v} ${k}`).join(", ")}</span></span>
                 <a href={`/api/backup/${b.name}`} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line-strong px-3 text-sm hover:bg-surface-3"><Download className="h-4 w-4" />.tar</a>
-                <RestoreDialog name={b.name} />
+                <RestoreDialog name={b.name} hasPin={Boolean(me.pinHash)} />
                 <InlineAction action={deleteBackupAction} fields={{ name: b.name }} variant="ghost" size="iconSm" confirm="Delete this backup?" title="Delete"><Trash2 className="h-4 w-4" /></InlineAction>
               </li>
             ))}
@@ -59,7 +59,7 @@ export default async function SettingsPage() {
           <CardHeader icon={<Download className="h-4 w-4 text-accent" />} title="Your data" sub="Export includes shared household data plus your own private records — never another person's private data." />
           <CardBody className="flex flex-wrap gap-3">
             <a href="/api/export" className="inline-flex h-11 items-center gap-2 rounded-xl border border-line-strong bg-surface-3 px-4 text-sm font-medium hover:bg-[#252a31]"><Download className="h-4 w-4" />Export my data (JSON)</a>
-            <EraseMyData />
+            <EraseMyData hasPin={Boolean(me.pinHash)} />
           </CardBody>
         </Card>
         <Card>

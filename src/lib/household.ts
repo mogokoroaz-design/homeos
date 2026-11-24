@@ -11,7 +11,7 @@ export const setupInput = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/, "Use a 3-letter currency code"),
   profiles: z.array(z.object({
     name: z.string().trim().min(1, "Each person needs a name").max(40),
-    pin: z.string().refine(validatePinFormat, "PINs are 4–8 digits"),
+    pin: z.string().optional().refine((p) => !p || validatePinFormat(p), "PINs are 4–8 digits"),
     color: z.string(),
   })).min(1).max(6),
 });
@@ -28,8 +28,8 @@ export async function createHousehold(input: z.infer<typeof setupInput>) {
   return prisma.$transaction(async (tx) => {
     const h = await tx.household.create({ data: { name: data.householdName, currency: data.currency } });
     for (const p of data.profiles) {
-      const { hash, salt } = hashPin(p.pin);
-      await tx.householdProfile.create({ data: { householdId: h.id, name: p.name, color: p.color, pinHash: hash, pinSalt: salt } });
+      const pin = p.pin ? hashPin(p.pin) : null;
+      await tx.householdProfile.create({ data: { householdId: h.id, name: p.name, color: p.color, pinHash: pin?.hash ?? null, pinSalt: pin?.salt ?? null } });
     }
     await ensureDefaultCategories(tx);
     await audit({ action: "household.create", entityType: "household", entityId: h.id, summary: `${data.householdName} with ${data.profiles.length} profiles` }, tx);
@@ -38,5 +38,6 @@ export async function createHousehold(input: z.infer<typeof setupInput>) {
 }
 
 export async function listProfiles() {
-  return prisma.householdProfile.findMany({ select: { id: true, name: true, color: true, pinLockedUntil: true }, orderBy: { createdAt: "asc" } });
+  const rows = await prisma.householdProfile.findMany({ select: { id: true, name: true, color: true, pinLockedUntil: true, pinHash: true }, orderBy: { createdAt: "asc" } });
+  return rows.map(({ pinHash, ...r }) => ({ ...r, hasPin: Boolean(pinHash) }));
 }

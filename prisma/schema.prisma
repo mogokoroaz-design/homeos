@@ -33,8 +33,8 @@ model HouseholdProfile {
   household         Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   name              String
   color             String    @default("#8fb3a3")
-  pinHash           String
-  pinSalt           String
+  pinHash           String? // null = no PIN set (profile opens with one tap)
+  pinSalt           String?
   failedPinAttempts Int       @default(0)
   pinLockedUntil    DateTime?
   birthDate         String?

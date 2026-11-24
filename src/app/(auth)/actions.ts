@@ -8,8 +8,8 @@ import { ZodError } from "zod";
 
 export async function setupAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const count = Number(fd.get("count") ?? 2);
-  const profiles = Array.from({ length: count }, (_, i) => ({ name: String(fd.get(`name${i}`) ?? ""), pin: String(fd.get(`pin${i}`) ?? ""), color: String(fd.get(`color${i}`) ?? "#9cc2b0") }));
-  for (let i = 0; i < count; i++) if (fd.get(`pin${i}`) !== fd.get(`pin${i}confirm`)) return { ok: false, error: `PINs for ${profiles[i].name || `person ${i + 1}`} don't match` };
+  // PINs are optional at setup — each person can add one later from their profile.
+  const profiles = Array.from({ length: count }, (_, i) => ({ name: String(fd.get(`name${i}`) ?? ""), color: String(fd.get(`color${i}`) ?? "#9cc2b0") }));
   try {
     await createHousehold(setupInput.parse({ householdName: fd.get("householdName"), currency: String(fd.get("currency") ?? "USD").toUpperCase(), profiles }));
   } catch (e) {

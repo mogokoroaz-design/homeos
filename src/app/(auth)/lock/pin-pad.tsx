@@ -4,8 +4,11 @@ import { unlockAction } from "../actions";
 import { cn } from "@/lib/utils";
 import { Delete, Loader2 } from "lucide-react";
 
-export function PinPad({ profiles, next }: { profiles: { id: string; name: string; color: string }[]; next: string }) {
-  const [selected, setSelected] = useState<string | null>(profiles.length === 1 ? profiles[0].id : null);
+export function PinPad({ profiles, next }: { profiles: { id: string; name: string; color: string; hasPin: boolean }[]; next: string }) {
+  const [selected, setSelected] = useState<string | null>(profiles.length === 1 && profiles[0].hasPin ? profiles[0].id : null);
+  const openRef = useRef<HTMLFormElement>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  useEffect(() => { if (openId) openRef.current?.requestSubmit(); }, [openId]);
   const [pin, setPin] = useState("");
   const [state, action, pending] = useActionState(unlockAction, null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -16,12 +19,19 @@ export function PinPad({ profiles, next }: { profiles: { id: string; name: strin
     <div className="mt-8 w-full">
       <div className="flex flex-wrap justify-center gap-4">
         {profiles.map((p) => (
-          <button key={p.id} type="button" onClick={() => { setSelected(p.id); setPin(""); }} className={cn("flex w-32 flex-col items-center gap-3 rounded-2xl border p-5 transition", selected === p.id ? "border-accent/60 bg-surface-2" : "border-line bg-surface hover:bg-surface-2")}>
+          <button key={p.id} type="button" disabled={pending} onClick={() => { if (!p.hasPin) { setSelected(null); if (openId === p.id) openRef.current?.requestSubmit(); else setOpenId(p.id); return; } setSelected(p.id); setPin(""); }} className={cn("flex w-32 flex-col items-center gap-3 rounded-2xl border p-5 transition", selected === p.id ? "border-accent/60 bg-surface-2" : "border-line bg-surface hover:bg-surface-2")}>
             <span className="flex h-16 w-16 items-center justify-center rounded-full text-2xl font-semibold text-[#0c1110]" style={{ background: p.color }}>{p.name[0]?.toUpperCase()}</span>
             <span className="font-medium">{p.name}</span>
+            {!p.hasPin ? <span className="-mt-2 text-[11px] text-faint">{pending && openId === p.id ? "Opening…" : "No PIN"}</span> : null}
           </button>
         ))}
       </div>
+      <form ref={openRef} action={action} className="hidden">
+        <input type="hidden" name="profileId" value={openId ?? ""} />
+        <input type="hidden" name="pin" value="" />
+        <input type="hidden" name="next" value={next} />
+      </form>
+      {!selected && state && !state.ok ? <p role="alert" className="mt-4 text-center text-sm text-danger">{state.error}</p> : null}
       {profile ? (
         <form ref={formRef} action={action} className="mx-auto mt-8 w-full max-w-xs">
           <input type="hidden" name="profileId" value={profile.id} />

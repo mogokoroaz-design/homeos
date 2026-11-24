@@ -21,11 +21,7 @@ export function SetupForm() {
             <input type="hidden" name={`color${i}`} value={PROFILE_COLORS[i % PROFILE_COLORS.length]} />
             <span className="h-3 w-3 rounded-full" style={{ background: PROFILE_COLORS[i % PROFILE_COLORS.length] }} />
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Name"><Input name={`name${i}`} required autoComplete="off" /></Field>
-            <Field label="PIN (4–8 digits)"><Input name={`pin${i}`} type="password" inputMode="numeric" pattern="\d{4,8}" required autoComplete="new-password" /></Field>
-            <Field label="Confirm PIN"><Input name={`pin${i}confirm`} type="password" inputMode="numeric" pattern="\d{4,8}" required autoComplete="new-password" /></Field>
-          </div>
+          <Field label="Name"><Input name={`name${i}`} required autoComplete="off" /></Field>
         </Card>
       ))}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -35,7 +31,7 @@ export function SetupForm() {
         </div>
         <SubmitButton size="lg" pendingText="Creating…">Create household</SubmitButton>
       </div>
-      <p className="text-xs text-faint">PINs keep each person&apos;s private records private on a shared iPad. They are stored only as salted scrypt hashes.</p>
+      <p className="text-xs text-faint">No PINs needed now. Each person can add a PIN from their profile to keep their private records private on a shared iPad.</p>
     </ActionForm>
   );
 }

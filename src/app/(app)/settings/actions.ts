@@ -8,7 +8,7 @@ import type { ActionResult } from "@/lib/validation";
 import { setSetting } from "@/lib/settings";
 import { OllamaProvider, isLocalUrl } from "@/lib/ai/provider";
 import { createBackup, restoreBackup, deleteBackup, erasePersonalData } from "@/lib/backup";
-import { hashPin, verifyPin, validatePinFormat } from "@/lib/auth/pin";
+import { hashPin, verifyPin, validatePinFormat, confirmPin } from "@/lib/auth/pin";
 import { audit } from "@/lib/audit";
 
 export async function saveAISettingsAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
@@ -40,19 +40,25 @@ export async function saveSecurityAction(_: ActionResult | null, fd: FormData): 
   await requireViewer();
   return run(async () => { await setSetting("security.autoLockMinutes", String(z.coerce.number().int().min(1).max(1440).parse(fd.get("minutes")))); }, "Saved");
 }
-export async function changePinAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+/** Add, change or remove your own PIN. Changing/removing requires the current PIN. */
+export async function setPinAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const viewer = await requireViewer();
   return run(async () => {
     const p = await prisma.householdProfile.findUniqueOrThrow({ where: { id: viewer.profileId } });
-    if (!verifyPin(String(fd.get("current")), p.pinHash, p.pinSalt)) throw new Error("Current PIN is incorrect");
-    const next = String(fd.get("next"));
+    if (p.pinHash && !verifyPin(String(fd.get("current") ?? ""), p.pinHash, p.pinSalt)) throw new Error("Current PIN is incorrect");
+    if (fd.get("remove") === "1") {
+      await prisma.householdProfile.update({ where: { id: p.id }, data: { pinHash: null, pinSalt: null, failedPinAttempts: 0, pinLockedUntil: null } });
+      await audit({ profileId: p.id, action: "auth.pin_remove", entityType: "profile", entityId: p.id, summary: "PIN removed" });
+      return "removed";
+    }
+    const next = String(fd.get("next") ?? "");
     if (!validatePinFormat(next)) throw new Error("PIN must be 4–8 digits");
-    if (next !== fd.get("confirm")) throw new Error("New PINs don't match");
+    if (next !== fd.get("confirm")) throw new Error("The two PINs don't match");
     const { hash, salt } = hashPin(next);
-    await prisma.householdProfile.update({ where: { id: p.id }, data: { pinHash: hash, pinSalt: salt } });
-    await prisma.userSession.deleteMany({ where: { profileId: p.id } });
-    await audit({ profileId: p.id, action: "auth.pin_change", entityType: "profile", entityId: p.id, summary: "PIN changed" });
-  }, "PIN changed — please unlock again");
+    await prisma.householdProfile.update({ where: { id: p.id }, data: { pinHash: hash, pinSalt: salt, failedPinAttempts: 0, pinLockedUntil: null } });
+    await audit({ profileId: p.id, action: p.pinHash ? "auth.pin_change" : "auth.pin_add", entityType: "profile", entityId: p.id, summary: p.pinHash ? "PIN changed" : "PIN added" });
+    return p.pinHash ? "changed" : "added";
+  }, (r) => (r === "removed" ? "PIN removed — your profile now opens without a PIN" : r === "added" ? "PIN added — your private records are now locked to you" : "PIN changed"));
 }
 export async function saveDashboardAction(fd: FormData) {
   const viewer = await requireViewer();
@@ -69,7 +75,8 @@ export async function backupNowAction() {
 export async function restoreAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const viewer = await requireViewer();
   const p = await prisma.householdProfile.findUniqueOrThrow({ where: { id: viewer.profileId } });
-  if (!verifyPin(String(fd.get("pin") ?? ""), p.pinHash, p.pinSalt)) return { ok: false, error: "Incorrect PIN — restore cancelled" };
+  if (!confirmPin(p, String(fd.get("pin") ?? ""))) return { ok: false, error: "Incorrect PIN — restore cancelled" };
+  if (!p.pinHash && fd.get("confirm") !== "RESTORE") return { ok: false, error: "Type RESTORE to confirm" };
   try {
     await restoreBackup(String(fd.get("name")), viewer.profileId);
   } catch (e) {
@@ -84,7 +91,7 @@ export async function deleteBackupAction(fd: FormData) {
 export async function eraseMyDataAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const viewer = await requireViewer();
   const p = await prisma.householdProfile.findUniqueOrThrow({ where: { id: viewer.profileId } });
-  if (!verifyPin(String(fd.get("pin") ?? ""), p.pinHash, p.pinSalt)) return { ok: false, error: "Incorrect PIN" };
+  if (!confirmPin(p, String(fd.get("pin") ?? ""))) return { ok: false, error: "Incorrect PIN" };
   if (fd.get("confirm") !== "ERASE") return { ok: false, error: "Type ERASE to confirm" };
   await createBackup("pre-erase", viewer.profileId);
   await erasePersonalData(viewer.profileId);
