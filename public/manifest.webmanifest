@@ -1,0 +1,14 @@
+{
+  "name": "HomeOS",
+  "short_name": "HomeOS",
+  "description": "Local-first household and personal operating system",
+  "start_url": "/today",
+  "display": "standalone",
+  "background_color": "#0b0c0e",
+  "theme_color": "#0b0c0e",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

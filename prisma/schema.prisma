@@ -1,0 +1,935 @@
+// HomeOS data model.
+// Conventions:
+//  * UUID string identifiers.
+//  * Money is stored as integer minor units (cents) — exact, no floating point drift.
+//  * Calendar dates are stored as "YYYY-MM-DD" strings in household local time; instants as DateTime.
+//  * Quantities always carry an explicit unit string (see src/lib/units.ts).
+//  * Enumerations are strings validated by Zod (src/lib/validation.ts).
+//  * Privacy: records with ownerProfileId + visibility "PRIVATE" are only readable by their owner
+//    (or a profile granted access through ProfileAccess). Enforced in src/lib/auth + services.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Household ─────────────────────────────
+
+model Household {
+  id        String             @id @default(uuid())
+  name      String
+  currency  String             @default("USD")
+  createdAt DateTime           @default(now())
+  profiles  HouseholdProfile[]
+}
+
+model HouseholdProfile {
+  id                String    @id @default(uuid())
+  householdId       String
+  household         Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name              String
+  color             String    @default("#8fb3a3")
+  pinHash           String
+  pinSalt           String
+  failedPinAttempts Int       @default(0)
+  pinLockedUntil    DateTime?
+  birthDate         String?
+  sex               String?   // "male" | "female" | "unspecified" — only used for BMR estimation
+  heightCm          Float?
+  goalWeightKg      Float?
+  activityLevel     String    @default("moderate")
+  goal              String    @default("maintain") // lose | maintain | gain
+  dietPreferences   String    @default("")
+  fitnessGoals      String    @default("")
+  dashboardConfig   String    @default("{}")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  sessions          UserSession[]
+  grantsGiven       ProfileAccess[] @relation("grantOwner")
+  grantsReceived    ProfileAccess[] @relation("grantee")
+  nutritionTargets  NutritionTarget[]
+  foodLogs          FoodLog[]
+  mealServings      MealServing[]
+  metrics           WellnessMetric[]
+  workouts          Workout[]
+  habits            Habit[]
+  routines          PersonalRoutine[]
+  projects          Project[]
+  notes             Note[]
+  conversations     AIConversation[]
+}
+
+model UserSession {
+  id         String           @id @default(uuid())
+  profileId  String
+  profile    HouseholdProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  tokenHash  String           @unique
+  createdAt  DateTime         @default(now())
+  lastSeenAt DateTime         @default(now())
+  expiresAt  DateTime
+  @@index([profileId])
+}
+
+// Explicit permission for another profile to view a category of private data.
+model ProfileAccess {
+  id               String           @id @default(uuid())
+  ownerProfileId   String
+  owner            HouseholdProfile @relation("grantOwner", fields: [ownerProfileId], references: [id], onDelete: Cascade)
+  granteeProfileId String
+  grantee          HouseholdProfile @relation("grantee", fields: [granteeProfileId], references: [id], onDelete: Cascade)
+  scope            String           // wellness | nutrition | fitness | habits
+  createdAt        DateTime         @default(now())
+  @@unique([ownerProfileId, granteeProfileId, scope])
+}
+
+model AppSetting {
+  key   String @id
+  value String
+}
+
+// ───────────────────────────── Food ─────────────────────────────
+
+model FoodItem {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  category          String   @default("other")
+  defaultUnit       String   @default("g")
+  gramsPerMl        Float?
+  gramsPerEach      Float?
+  kcalPer100g       Float?
+  proteinPer100g    Float?
+  carbsPer100g      Float?
+  fatPer100g        Float?
+  fibrePer100g      Float?
+  nutritionSource   String?  // USDA_SR28 | LABEL | USER_ESTIMATE | AI_ESTIMATE
+  nutritionVerified Boolean  @default(false)
+  usdaNdb           String?
+  barcode           String?  @unique
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  aliases           Ingredient[]
+  recipeIngredients RecipeIngredient[]
+  pantryItems       PantryItem[]
+  groceryItems      GroceryItem[]
+  products          Product[]
+  logItems          FoodLogItem[]
+  @@index([category])
+}
+
+// Alias names that resolve to a FoodItem ("chicken thighs" → Chicken thigh).
+model Ingredient {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  foodItemId String
+  foodItem   FoodItem @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+}
+
+model Recipe {
+  id                 String   @id @default(uuid())
+  name               String
+  cuisine            String   @default("")
+  category           String   @default("main")
+  servings           Float    @default(2)
+  prepMinutes        Int?
+  cookMinutes        Int?
+  temperature        String   @default("")
+  instructions       String   @default("") // one step per line
+  sourceType         String   @default("MANUAL") // MANUAL | AI | URL | TEXT | SCREENSHOT | TRANSCRIPT | VIDEO | INSTAGRAM | YOUTUBE
+  sourceUrl          String?
+  notes              String   @default("")
+  tags               String   @default("") // comma separated
+  favourite          Boolean  @default(false)
+  createdByProfileId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  ingredients RecipeIngredient[]
+  images      RecipeImage[]
+  mealItems   MealPlanItem[]
+  imports     RecipeImport[]
+  @@index([name])
+}
+
+model RecipeIngredient {
+  id         String    @id @default(uuid())
+  recipeId   String
+  recipe     Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  foodItemId String?
+  foodItem   FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+  name       String
+  quantity   Float?
+  unit       String    @default("")
+  note       String    @default("")
+  optional   Boolean   @default(false)
+  sortOrder  Int       @default(0)
+  @@index([recipeId])
+  @@index([foodItemId])
+}
+
+model RecipeImage {
+  id       String       @id @default(uuid())
+  recipeId String
+  recipe   Recipe       @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  fileId   String
+  file     UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+}
+
+model RecipeImport {
+  id                 String   @id @default(uuid())
+  method             String   // URL | TEXT | SCREENSHOT | TRANSCRIPT | VIDEO
+  sourceUrl          String?
+  rawText            String   @default("")
+  extracted          String   @default("{}") // JSON (validated) draft recipe
+  warnings           String   @default("[]")
+  status             String   @default("PENDING_REVIEW") // PENDING_REVIEW | SAVED | DISCARDED | FAILED
+  error              String?
+  recipeId           String?
+  recipe             Recipe?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  fileId             String?
+  createdByProfileId String?
+  createdAt          DateTime @default(now())
+}
+
+model MealPlan {
+  id        String         @id @default(uuid())
+  weekStart String         @unique // Monday "YYYY-MM-DD"
+  notes     String         @default("")
+  createdAt DateTime       @default(now())
+  items     MealPlanItem[]
+}
+
+model MealPlanItem {
+  id             String        @id @default(uuid())
+  mealPlanId     String
+  mealPlan       MealPlan      @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  date           String
+  slot           String        // BREAKFAST | LUNCH | DINNER | SNACK
+  recipeId       String?
+  recipe         Recipe?       @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  title          String
+  notes          String        @default("")
+  cookTime       String?       // "18:30"
+  prepNote       String        @default("") // meal-prep instruction, e.g. "marinate the night before"
+  isLeftover     Boolean       @default(false)
+  leftoverFromId String?
+  status         String        @default("PLANNED") // PLANNED | COOKED | SKIPPED
+  createdAt      DateTime      @default(now())
+  servings       MealServing[]
+  @@index([date])
+}
+
+model MealServing {
+  id             String           @id @default(uuid())
+  mealPlanItemId String
+  mealPlanItem   MealPlanItem     @relation(fields: [mealPlanItemId], references: [id], onDelete: Cascade)
+  profileId      String
+  profile        HouseholdProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  servings       Float
+  logged         Boolean          @default(false)
+  @@unique([mealPlanItemId, profileId])
+}
+
+model FoodLog {
+  id        String           @id @default(uuid())
+  profileId String
+  profile   HouseholdProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  date      String
+  notes     String           @default("")
+  items     FoodLogItem[]
+  @@unique([profileId, date])
+}
+
+model FoodLogItem {
+  id             String    @id @default(uuid())
+  foodLogId      String
+  foodLog        FoodLog   @relation(fields: [foodLogId], references: [id], onDelete: Cascade)
+  slot           String
+  description    String
+  mealPlanItemId String?
+  recipeId       String?
+  foodItemId     String?
+  foodItem       FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+  quantity       Float?
+  unit           String    @default("")
+  grams          Float?
+  kcal           Float     @default(0)
+  protein        Float     @default(0)
+  carbs          Float     @default(0)
+  fat            Float     @default(0)
+  fibre          Float     @default(0)
+  isEstimate     Boolean   @default(true)
+  source         String    @default("MANUAL") // REFERENCE | RECIPE | MANUAL | LABEL
+  createdAt      DateTime  @default(now())
+}
+
+model NutritionTarget {
+  id            String           @id @default(uuid())
+  profileId     String
+  profile       HouseholdProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  kcal          Float
+  protein       Float
+  carbs         Float
+  fat           Float
+  fibre         Float
+  method        String           @default("MANUAL") // MANUAL | MIFFLIN_ST_JEOR
+  effectiveFrom String
+  createdAt     DateTime         @default(now())
+  @@index([profileId, effectiveFrom])
+}
+
+model PantryItem {
+  id                String    @id @default(uuid())
+  foodItemId        String?
+  foodItem          FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+  name              String
+  quantity          Float
+  originalQuantity  Float?
+  unit              String
+  purchaseDate      String?
+  expiryDate        String?
+  location          String    @default("PANTRY") // FRIDGE | FREEZER | PANTRY | OTHER
+  lowStockThreshold Float?
+  confidence        String    @default("CONFIRMED") // CONFIRMED | ESTIMATED | UNVERIFIED
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  transactions      InventoryTransaction[]
+  @@index([foodItemId])
+  @@index([expiryDate])
+}
+
+model InventoryTransaction {
+  id           String      @id @default(uuid())
+  pantryItemId String?
+  pantryItem   PantryItem? @relation(fields: [pantryItemId], references: [id], onDelete: SetNull)
+  foodItemId   String?
+  name         String
+  delta        Float
+  unit         String
+  reason       String      // PURCHASE | CONSUME | ADJUST | WASTE | RECEIPT | MEAL | SHOPPING
+  refType      String?
+  refId        String?
+  profileId    String?
+  createdAt    DateTime    @default(now())
+  @@index([createdAt])
+}
+
+model GroceryList {
+  id          String          @id @default(uuid())
+  name        String
+  status      String          @default("ACTIVE") // ACTIVE | COMPLETED
+  storeId     String?
+  store       Store?          @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+  completedAt DateTime?
+  items       GroceryItem[]
+  history     ShoppingHistory[]
+}
+
+model GroceryItem {
+  id                  String      @id @default(uuid())
+  listId              String
+  list                GroceryList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  foodItemId          String?
+  foodItem            FoodItem?   @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+  name                String
+  quantity            Float
+  unit                String
+  packageNote         String      @default("")
+  estimatedPriceCents Int?
+  actualPriceCents    Int?
+  storeId             String?
+  checked             Boolean     @default(false)
+  source              String      @default("MANUAL") // MEAL_PLAN | MANUAL | LOW_STOCK | ASSISTANT
+  sourceKey           String?
+  addedToPantry       Boolean     @default(false)
+  createdAt           DateTime    @default(now())
+  @@unique([listId, sourceKey])
+}
+
+model ShoppingHistory {
+  id            String      @id @default(uuid())
+  groceryListId String
+  groceryList   GroceryList @relation(fields: [groceryListId], references: [id], onDelete: Cascade)
+  storeId       String?
+  date          String
+  totalCents    Int
+  itemCount     Int
+  expenseId     String?
+  createdAt     DateTime    @default(now())
+}
+
+// ───────────────────────────── Finance ─────────────────────────────
+
+model BudgetCategory {
+  id        String    @id @default(uuid())
+  key       String    @unique
+  name      String
+  color     String    @default("#8b93a1")
+  sortOrder Int       @default(0)
+  expenses  Expense[]
+  budgets   Budget[]
+  bills     Bill[]
+}
+
+model Budget {
+  id          String         @id @default(uuid())
+  categoryId  String
+  category    BudgetCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  month       String         // "YYYY-MM"
+  amountCents Int
+  @@unique([categoryId, month])
+}
+
+model Expense {
+  id              String         @id @default(uuid())
+  date            String
+  amountCents     Int
+  taxCents        Int?
+  merchant        String         @default("")
+  description     String         @default("")
+  categoryId      String
+  category        BudgetCategory @relation(fields: [categoryId], references: [id])
+  paidByProfileId String?
+  source          String         @default("MANUAL") // MANUAL | RECEIPT | BILL | SERVICE_VISIT | SHOPPING | MAINTENANCE
+  receiptId       String?        @unique
+  notes           String         @default("")
+  createdByProfileId String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  @@index([date])
+  @@index([categoryId])
+}
+
+model Bill {
+  id             String             @id @default(uuid())
+  name           String
+  provider       String             @default("")
+  amountCents    Int
+  dueDate        String
+  categoryId     String
+  category       BudgetCategory     @relation(fields: [categoryId], references: [id])
+  scheduleId     String?            @unique
+  schedule       RecurringSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  status         String             @default("UNPAID") // UNPAID | PAID (PAID only for non-recurring)
+  remindDaysBefore Int              @default(3)
+  notes          String             @default("")
+  active         Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  payments       BillPayment[]
+  attachments    BillAttachment[]
+}
+
+model BillPayment {
+  id          String   @id @default(uuid())
+  billId      String
+  bill        Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  dueDate     String
+  paidDate    String
+  amountCents Int
+  expenseId   String?
+  createdAt   DateTime @default(now())
+}
+
+model BillAttachment {
+  id     String       @id @default(uuid())
+  billId String
+  bill   Bill         @relation(fields: [billId], references: [id], onDelete: Cascade)
+  fileId String
+  file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+}
+
+model Receipt {
+  id                  String        @id @default(uuid())
+  fileId              String
+  file                UploadedFile  @relation(fields: [fileId], references: [id])
+  imageHash           String        @unique
+  merchant            String        @default("")
+  date                String?
+  subtotalCents       Int?
+  taxCents            Int?
+  totalCents          Int?
+  paymentNote         String        @default("") // e.g. "Card ending 1234" — never full numbers
+  categoryKey         String        @default("groceries")
+  ocrText             String        @default("")
+  ocrConfidence       Float?
+  status              String        @default("PENDING_REVIEW") // PENDING_REVIEW | SAVED | DISCARDED
+  storeId             String?
+  expenseId           String?
+  uploadedByProfileId String?
+  createdAt           DateTime      @default(now())
+  reviewedAt          DateTime?
+  items               ReceiptItem[]
+}
+
+model ReceiptItem {
+  id               String          @id @default(uuid())
+  receiptId        String
+  receipt          Receipt         @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  rawText          String          @default("")
+  name             String
+  quantity         Float           @default(1)
+  unit             String          @default("each")
+  unitPriceCents   Int?
+  totalCents       Int
+  productVariantId String?
+  foodItemId       String?
+  addToPantry      Boolean         @default(false)
+  sortOrder        Int             @default(0)
+  priceRecords     PriceRecord[]
+}
+
+model Store {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  location     String        @default("")
+  priceRecords PriceRecord[]
+  groceryLists GroceryList[]
+}
+
+model Brand {
+  id       String           @id @default(uuid())
+  name     String           @unique
+  variants ProductVariant[]
+}
+
+model Product {
+  id         String           @id @default(uuid())
+  name       String           @unique
+  category   String           @default("groceries")
+  foodItemId String?
+  foodItem   FoodItem?        @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+  variants   ProductVariant[]
+  comparisons PriceComparison[]
+}
+
+model ProductVariant {
+  id          String        @id @default(uuid())
+  productId   String
+  product     Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  brandId     String?
+  brand       Brand?        @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  variantName String        @default("")
+  packageSize Float
+  packageUnit String
+  barcode     String?
+  priceRecords PriceRecord[]
+  @@unique([productId, brandId, variantName, packageSize, packageUnit])
+}
+
+model PriceRecord {
+  id                String         @id @default(uuid())
+  variantId         String
+  variant           ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  storeId           String?
+  store             Store?         @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  date              String
+  priceCents        Int            // price paid per package
+  regularPriceCents Int?
+  isPromo           Boolean        @default(false)
+  quantity          Float          @default(1) // packages bought
+  normalizedUnit    String         // g | ml | each
+  unitPrice         Float          // cents per normalizedUnit (derived, deterministic)
+  source            String         @default("MANUAL") // RECEIPT | MANUAL | ESTIMATE | EXTERNAL
+  receiptItemId     String?
+  receiptItem       ReceiptItem?   @relation(fields: [receiptItemId], references: [id], onDelete: SetNull)
+  createdAt         DateTime       @default(now())
+  @@index([variantId, date])
+}
+
+model PriceComparison {
+  id         String   @id @default(uuid())
+  name       String
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+}
+
+// ───────────────────────────── Home ─────────────────────────────
+
+model RecurringSchedule {
+  id         String  @id @default(uuid())
+  freq       String  // DAILY | WEEKLY | MONTHLY | YEARLY
+  interval   Int     @default(1)
+  byWeekday  String  @default("") // "1,3,5" — 0=Sunday
+  dayOfMonth Int?
+  startDate  String
+  endDate    String?
+  task       HouseholdTask?
+  bill       Bill?
+  event      CalendarEvent?
+  routine    PersonalRoutine?
+}
+
+model HouseholdTask {
+  id                String             @id @default(uuid())
+  title             String
+  description       String             @default("")
+  category          String             @default("CLEANING") // CLEANING | GARDENING | MAINTENANCE | LAUNDRY | KITCHEN | ERRAND | OTHER
+  area              String             @default("")
+  assigneeProfileId String?
+  scheduleId        String?            @unique
+  schedule          RecurringSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  dueDate           String?
+  dueTime           String?
+  status            String             @default("OPEN") // OPEN | DONE
+  isDeepClean       Boolean            @default(false)
+  active            Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  completions       HouseholdTaskCompletion[]
+  @@index([dueDate])
+}
+
+model HouseholdTaskCompletion {
+  id          String        @id @default(uuid())
+  taskId      String
+  task        HouseholdTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  profileId   String?
+  dueDate     String?
+  skipped     Boolean       @default(false)
+  completedAt DateTime      @default(now())
+}
+
+model ServiceProvider {
+  id         String         @id @default(uuid())
+  name       String
+  kind       String         // CLEANER | GARDENER | PLUMBER | ELECTRICIAN | REPAIR | OTHER
+  phone      String         @default("")
+  email      String         @default("")
+  notes      String         @default("")
+  rateCents  Int?
+  rateUnit   String         @default("visit")
+  active     Boolean        @default(true)
+  createdAt  DateTime       @default(now())
+  visits     ServiceVisit[]
+  maintenance MaintenanceRecord[]
+}
+
+model ServiceVisit {
+  id           String          @id @default(uuid())
+  providerId   String
+  provider     ServiceProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  date         String
+  time         String?
+  status       String          @default("SCHEDULED") // SCHEDULED | COMPLETED | CANCELLED
+  instructions String          @default("")
+  notes        String          @default("")
+  paymentCents Int?
+  paid         Boolean         @default(false)
+  expenseId    String?
+  createdAt    DateTime        @default(now())
+  @@index([date])
+}
+
+model HomeAsset {
+  id            String              @id @default(uuid())
+  name          String
+  location      String              @default("")
+  brand         String              @default("")
+  model         String              @default("")
+  purchaseDate  String?
+  warrantyUntil String?
+  notes         String              @default("")
+  createdAt     DateTime            @default(now())
+  records       MaintenanceRecord[]
+}
+
+model MaintenanceRecord {
+  id          String           @id @default(uuid())
+  title       String
+  kind        String           @default("REPAIR") // APPLIANCE | PLUMBING | ELECTRICAL | REPAIR | OTHER
+  assetId     String?
+  asset       HomeAsset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  providerId  String?
+  provider    ServiceProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  date        String
+  costCents   Int?
+  expenseId   String?
+  nextDueDate String?
+  notes       String           @default("")
+  createdAt   DateTime         @default(now())
+}
+
+// ───────────────────────────── Personal (owner-scoped) ─────────────────────────────
+
+model WellnessMetric {
+  id        String           @id @default(uuid())
+  profileId String
+  profile   HouseholdProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  date      String
+  type      String           // WEIGHT | STEPS | SLEEP_HOURS | WATER_ML | RESTING_HR | ENERGY | STRESS
+  value     Float
+  unit      String
+  note      String           @default("")
+  createdAt DateTime         @default(now())
+  @@index([profileId, type, date])
+}
+
+model Workout {
+  id          String           @id @default(uuid())
+  profileId   String
+  profile     HouseholdProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  date        String
+  type        String
+  durationMin Int
+  distanceKm  Float?
+  kcalBurned  Float?
+  intensity   String           @default("moderate")
+  notes       String           @default("")
+  createdAt   DateTime         @default(now())
+  @@index([profileId, date])
+}
+
+model Habit {
+  id           String           @id @default(uuid())
+  profileId    String
+  profile      HouseholdProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name         String
+  targetPerWeek Int             @default(7)
+  active       Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  logs         HabitLog[]
+}
+
+model HabitLog {
+  id      String @id @default(uuid())
+  habitId String
+  habit   Habit  @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  date    String
+  @@unique([habitId, date])
+}
+
+model PersonalRoutine {
+  id          String             @id @default(uuid())
+  profileId   String
+  profile     HouseholdProfile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  name        String
+  timeOfDay   String             @default("MORNING") // MORNING | MIDDAY | EVENING | ANY
+  time        String?
+  steps       String             @default("[]") // JSON string[]
+  scheduleId  String?            @unique
+  schedule    RecurringSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  active      Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  completions RoutineCompletion[]
+}
+
+model RoutineCompletion {
+  id        String          @id @default(uuid())
+  routineId String
+  routine   PersonalRoutine @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  date      String
+  @@unique([routineId, date])
+}
+
+// ───────────────────────────── Projects (private by default) ─────────────────────────────
+
+model Project {
+  id             String             @id @default(uuid())
+  ownerProfileId String
+  owner          HouseholdProfile   @relation(fields: [ownerProfileId], references: [id], onDelete: Cascade)
+  name           String
+  description    String             @default("")
+  icon           String             @default("notebook")
+  visibility     String             @default("PRIVATE")
+  archived       Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  fields         ProjectField[]
+  entries        ProjectEntry[]
+  integrations   ProjectIntegration[]
+  reminders      ProjectReminder[]
+}
+
+model ProjectField {
+  id        String  @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key       String
+  label     String
+  type      String  // see src/lib/projects/schema.ts FIELD_TYPES
+  required  Boolean @default(false)
+  config    String  @default("{}") // JSON validated per type
+  sortOrder Int     @default(0)
+  archived  Boolean @default(false)
+  @@unique([projectId, key])
+}
+
+model ProjectEntry {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  date      String
+  values    String   @default("{}") // JSON validated against fields
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([projectId, date])
+}
+
+model ProjectIntegration {
+  id         String    @id @default(uuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind       String    // INSIGHTS_SUMMARY | CALENDAR | REMINDER
+  config     String    @default("{}")
+  status     String    @default("PROPOSED") // PROPOSED | APPROVED | REVOKED
+  approvedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model ProjectReminder {
+  id        String  @id @default(uuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  time      String  // "21:00"
+  weekdays  String  @default("0,1,2,3,4,5,6")
+  message   String
+  active    Boolean @default(true)
+}
+
+// ───────────────────────────── Global ─────────────────────────────
+
+model CalendarEvent {
+  id             String             @id @default(uuid())
+  title          String
+  description    String             @default("")
+  date           String
+  startTime      String?
+  endTime        String?
+  kind           String             @default("HOUSEHOLD") // HOUSEHOLD | PERSONAL | EXERCISE | APPOINTMENT | FOOD_PREP
+  ownerProfileId String?
+  visibility     String             @default("SHARED")
+  scheduleId     String?            @unique
+  schedule       RecurringSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  linkType       String?
+  linkId         String?
+  createdAt      DateTime           @default(now())
+  overrides      CalendarOccurrence[]
+  @@index([date])
+}
+
+model CalendarOccurrence {
+  id      String        @id @default(uuid())
+  eventId String
+  event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  date    String        // original occurrence date
+  status  String        // DONE | SKIPPED | MOVED
+  movedTo String?
+  @@unique([eventId, date])
+}
+
+model Reminder {
+  id             String   @id @default(uuid())
+  title          String
+  date           String
+  time           String?
+  ownerProfileId String?
+  visibility     String   @default("SHARED")
+  linkType       String?
+  linkId         String?
+  done           Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  @@index([date])
+}
+
+model Note {
+  id             String           @id @default(uuid())
+  ownerProfileId String
+  owner          HouseholdProfile @relation(fields: [ownerProfileId], references: [id], onDelete: Cascade)
+  visibility     String           @default("PRIVATE") // PRIVATE | SHARED
+  title          String           @default("")
+  body           String           @default("")
+  checklist      String           @default("[]") // JSON [{text, done}]
+  tags           String           @default("")
+  pinned         Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  attachments    NoteAttachment[]
+  links          NoteLink[]
+  @@index([ownerProfileId])
+}
+
+model NoteAttachment {
+  id     String       @id @default(uuid())
+  noteId String
+  note   Note         @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  fileId String
+  file   UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+}
+
+model NoteLink {
+  id         String @id @default(uuid())
+  noteId     String
+  note       Note   @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  entityType String // recipe | task | bill | provider | project | pantry | expense | event
+  entityId   String
+  label      String @default("")
+  @@index([entityType, entityId])
+}
+
+model AIConversation {
+  id        String           @id @default(uuid())
+  profileId String
+  profile   HouseholdProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  assistant String           // KITCHEN | HOUSEHOLD | ...
+  title     String           @default("")
+  createdAt DateTime         @default(now())
+  messages  AIMessage[]
+}
+
+model AIMessage {
+  id             String         @id @default(uuid())
+  conversationId String
+  conversation   AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String         // user | assistant
+  content        String
+  data           String?        // JSON structured payload (cards, grounding)
+  provider       String         @default("rules")
+  createdAt      DateTime       @default(now())
+}
+
+model AIAction {
+  id             String    @id @default(uuid())
+  profileId      String
+  conversationId String?
+  kind           String    // MEAL_PLAN | PANTRY_UPDATE | GROCERY_ADD | PROJECT_CREATE | ...
+  summary        String
+  payload        String    // JSON validated per kind
+  status         String    @default("PROPOSED") // PROPOSED | EXECUTED | REJECTED | FAILED
+  result         String?
+  createdAt      DateTime  @default(now())
+  decidedAt      DateTime?
+}
+
+model UploadedFile {
+  id             String           @id @default(uuid())
+  ownerProfileId String?
+  visibility     String           @default("SHARED")
+  storagePath    String           @unique
+  originalName   String
+  mimeType       String
+  size           Int
+  sha256         String
+  purpose        String           @default("general") // receipt | recipe | note | bill | import
+  createdAt      DateTime         @default(now())
+  receipts       Receipt[]
+  recipeImages   RecipeImage[]
+  noteAttachments NoteAttachment[]
+  billAttachments BillAttachment[]
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  profileId  String?
+  action     String
+  entityType String
+  entityId   String?
+  summary    String
+  createdAt  DateTime @default(now())
+  @@index([createdAt])
+}

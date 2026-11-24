@@ -1,0 +1,48 @@
+"use client";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { Lock, Plus, StickyNote, Sparkles, Menu } from "lucide-react";
+import { buttonClass } from "../ui";
+import { lockAction } from "@/app/(auth)/actions";
+import { NotesPanel } from "./notes-panel";
+import { QuickAdd } from "./quick-add";
+import { NAV, NAV_SECONDARY } from "./nav";
+import { cn } from "@/lib/utils";
+
+export function TopBar({ viewer, profiles }: { viewer: { name: string; color: string; profileId: string }; profiles: { id: string; name: string; color: string }[] }) {
+  const [notes, setNotes] = useState(false);
+  const [quick, setQuick] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const path = usePathname();
+  const section = [...NAV, ...NAV_SECONDARY].find((n) => path === n.href || path.startsWith(n.href + "/"));
+  return (
+    <>
+      <header className="sticky top-0 z-20 flex h-16 items-center gap-2 border-b border-line bg-bg/85 px-4 backdrop-blur sm:px-6 lg:px-8">
+        <button type="button" className={cn(buttonClass("ghost", "icon"), "md:hidden")} onClick={() => setMenu(!menu)} aria-label="Menu"><Menu className="h-5 w-5" /></button>
+        <p className="min-w-0 flex-1 truncate text-sm font-medium text-muted">{section?.label ?? "HomeOS"}</p>
+        <button type="button" onClick={() => setQuick(true)} className={buttonClass("primary", "md")} aria-label="Quick add"><Plus className="h-4 w-4" /><span className="hidden sm:inline">Add</span></button>
+        <button type="button" onClick={() => setNotes(true)} className={buttonClass("ghost", "icon")} aria-label="Open notes" title="Notes"><StickyNote className="h-[19px] w-[19px]" /></button>
+        <Link href="/assistant" className={buttonClass("ghost", "icon")} aria-label="Assistant" title="Assistant"><Sparkles className="h-[19px] w-[19px]" /></Link>
+        <div className="ml-1 flex items-center gap-2 rounded-xl border border-line bg-surface px-2 py-1.5">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold text-[#0c1110]" style={{ background: viewer.color }}>{viewer.name[0]?.toUpperCase()}</span>
+          <span className="hidden text-sm font-medium sm:inline">{viewer.name}</span>
+          <form action={lockAction}>
+            <button type="submit" className={buttonClass("ghost", "iconSm")} title={profiles.length > 1 ? "Lock / switch profile" : "Lock"} aria-label="Lock or switch profile"><Lock className="h-4 w-4" /></button>
+          </form>
+        </div>
+      </header>
+      {menu ? (
+        <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setMenu(false)}>
+          <nav className="h-full w-64 border-r border-line bg-surface p-3" onClick={(e) => e.stopPropagation()}>
+            {[...NAV, ...NAV_SECONDARY].map(({ href, label, icon: Icon }) => (
+              <Link key={href} href={href} onClick={() => setMenu(false)} className="flex h-12 items-center gap-3 rounded-xl px-3 text-muted hover:bg-surface-2 hover:text-ink"><Icon className="h-5 w-5" />{label}</Link>
+            ))}
+          </nav>
+        </div>
+      ) : null}
+      <NotesPanel open={notes} onClose={() => setNotes(false)} />
+      <QuickAdd open={quick} onClose={() => setQuick(false)} profiles={profiles} viewerId={viewer.profileId} />
+    </>
+  );
+}

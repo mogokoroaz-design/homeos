@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0b0c0e;
+  --color-surface: #111316;
+  --color-surface-2: #16191d;
+  --color-surface-3: #1d2126;
+  --color-line: #24282f;
+  --color-line-strong: #323840;
+  --color-ink: #e8eaed;
+  --color-muted: #9098a5;
+  --color-faint: #636b77;
+  --color-accent: #9cc2b0;
+  --color-accent-dim: #2a3a33;
+  --color-warn: #d9b26a;
+  --color-warn-dim: #3a3222;
+  --color-danger: #db8a80;
+  --color-danger-dim: #3b2523;
+  --color-info: #9fb2d4;
+  --color-info-dim: #232c3b;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --radius-card: 14px;
+}
+
+:root { color-scheme: dark; }
+html, body { background: var(--color-bg); color: var(--color-ink); }
+body { font-family: var(--font-sans); font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+* { scrollbar-width: thin; scrollbar-color: #2a2f36 transparent; }
+::selection { background: #2f4a3f; }
+input, select, textarea, button { font: inherit; }
+input[type="date"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.7); }
+.tabular { font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) {
+  .fade-in { animation: fade-in 160ms ease-out; }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+}
+dialog::backdrop { background: rgb(0 0 0 / 0.6); backdrop-filter: blur(2px); }
