@@ -17,6 +17,7 @@ export const METRIC_TYPES = {
   SLEEP_HOURS: { label: "Sleep", unit: "h" },
   WATER_ML: { label: "Hydration", unit: "ml" },
   RESTING_HR: { label: "Resting heart rate", unit: "bpm" },
+  ACTIVE_KCAL: { label: "Active energy", unit: "kcal" },
   ENERGY: { label: "Energy (1–5)", unit: "/5" },
   STRESS: { label: "Stress (1–5)", unit: "/5" },
 } as const;

@@ -11,6 +11,7 @@ import { METRIC_TYPES } from "@/lib/validation";
 import { Card, CardHeader, CardBody, Badge, SectionTitle } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
 import { TrendLine, Bars } from "@/components/charts";
+import { HealthCard, HealthIcon } from "@/components/people/health-card";
 import { ProfileForm, TargetsForm, MetricForm, WorkoutDialog, HabitForm, RoutineDialog } from "@/components/people/forms";
 import { deleteMetricAction, deleteWorkoutAction, toggleHabitAction, toggleRoutineAction, deletePersonalAction, setAccessAction } from "./actions";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,8 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
     listMetrics(viewer, me.id, "WEIGHT", 180), listMetrics(viewer, me.id, "STEPS", 14), listMetrics(viewer, me.id, "SLEEP_HOURS", 14), latestMetrics(viewer, me.id),
     listWorkouts(viewer, me.id, 84), habitsWithStatus(viewer, me.id, d), routinesForDay(viewer, me.id, d), currentTargets(me.id), prisma.profileAccess.findMany({ where: { ownerProfileId: me.id } }),
   ]);
+  const [lastImportRow, lastSyncRow] = await Promise.all([prisma.appSetting.findUnique({ where: { key: `health.lastImport.${me.id}` } }), prisma.appSetting.findUnique({ where: { key: `health.lastSync.${me.id}` } })]);
+  const activeEnergy = await listMetrics(viewer, me.id, "ACTIVE_KCAL", 14);
   const allRoutines = await prisma.personalRoutine.findMany({ where: { profileId: me.id, active: true }, include: { schedule: true } });
   const recentMetrics = await prisma.wellnessMetric.findMany({ where: { profileId: me.id }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 12 });
   const age = ageFrom(me.birthDate);
@@ -81,7 +84,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
           <CardBody className="space-y-4">
             <MetricForm />
             <ul className="divide-y divide-line text-sm">
-              {recentMetrics.map((m) => <li key={m.id} className="flex items-center gap-3 py-1.5"><span className="w-24 text-muted">{relativeDay(m.date)}</span><span className="flex-1">{METRIC_TYPES[m.type as keyof typeof METRIC_TYPES]?.label ?? m.type}</span><span className="tabular">{m.value} {m.unit}</span><InlineAction action={deleteMetricAction} fields={{ id: m.id }} variant="ghost" size="iconSm" title="Delete"><Trash2 className="h-3.5 w-3.5" /></InlineAction></li>)}
+              {recentMetrics.map((m) => <li key={m.id} className="flex items-center gap-3 py-1.5"><span className="w-24 text-muted">{relativeDay(m.date)}</span><span className="flex-1">{METRIC_TYPES[m.type as keyof typeof METRIC_TYPES]?.label ?? m.type}{m.source === "APPLE_HEALTH" ? <Badge className="ml-2" tone="info">Health</Badge> : null}</span><span className="tabular">{m.value} {m.unit}</span><InlineAction action={deleteMetricAction} fields={{ id: m.id }} variant="ghost" size="iconSm" title="Delete"><Trash2 className="h-3.5 w-3.5" /></InlineAction></li>)}
             </ul>
           </CardBody>
         </Card>
@@ -93,7 +96,19 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
           <CardHeader title="Sleep" sub="Last 14 days" />
           <CardBody>{sleep.length ? <Bars data={fortnight.map((day) => ({ date: day, h: lastOf(sleep, day) }))} x="date" xFmt="date" series={[{ key: "h", name: "Hours" }]} height={180} /> : <p className="text-sm text-muted">No sleep logged.</p>}</CardBody>
         </Card>
+        {activeEnergy.length ? (
+          <Card className="lg:col-span-2">
+            <CardHeader title="Active energy" sub="Last 14 days · from Apple Health" />
+            <CardBody><Bars data={fortnight.map((day) => ({ date: day, kcal: lastOf(activeEnergy, day) }))} x="date" xFmt="date" series={[{ key: "kcal", name: "kcal" }]} fmt="kcal" height={160} /></CardBody>
+          </Card>
+        ) : null}
       </div>
+
+      <SectionTitle><span id="health">Apple Health</span></SectionTitle>
+      <Card>
+        <CardHeader icon={<HealthIcon />} title="Apple Health & Fitness" sub="Bring in your history and keep new data flowing in — private to you." />
+        <CardBody><HealthCard lastImport={lastImportRow ? JSON.parse(lastImportRow.value) : null} lastSync={lastSyncRow?.value ?? null} hasKey={Boolean(me.healthTokenHash)} /></CardBody>
+      </Card>
 
       <SectionTitle action={<WorkoutDialog />}>Exercise</SectionTitle>
       <div className="grid gap-5 lg:grid-cols-2">
@@ -101,7 +116,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
         <Card>
           <CardHeader title="Recent workouts" />
           <ul className="divide-y divide-line border-t border-line text-sm">
-            {workouts.slice(0, 8).map((w) => <li key={w.id} className="flex items-center gap-3 px-5 py-2"><span className="w-24 text-muted">{relativeDay(w.date)}</span><span className="flex-1">{w.type}{w.notes ? <span className="text-faint"> · {w.notes}</span> : null}</span><span className="tabular text-muted">{w.durationMin} min{w.distanceKm ? ` · ${w.distanceKm} km` : ""}</span><InlineAction action={deleteWorkoutAction} fields={{ id: w.id }} variant="ghost" size="iconSm" title="Delete"><Trash2 className="h-3.5 w-3.5" /></InlineAction></li>)}
+            {workouts.slice(0, 8).map((w) => <li key={w.id} className="flex items-center gap-3 px-5 py-2"><span className="w-24 text-muted">{relativeDay(w.date)}</span><span className="flex-1">{w.type}{w.source === "APPLE_HEALTH" ? <Badge className="ml-2" tone="info">Health</Badge> : null}{w.notes ? <span className="text-faint"> · {w.notes}</span> : null}</span><span className="tabular text-muted">{w.durationMin} min{w.distanceKm ? ` · ${w.distanceKm} km` : ""}</span><InlineAction action={deleteWorkoutAction} fields={{ id: w.id }} variant="ghost" size="iconSm" title="Delete"><Trash2 className="h-3.5 w-3.5" /></InlineAction></li>)}
             {!workouts.length ? <li className="px-5 py-4 text-faint">No workouts logged.</li> : null}
           </ul>
         </Card>

@@ -80,7 +80,7 @@ export function QuickAdd({ open, onClose, profiles, viewerId }: { open: boolean;
       )}
       {tab === "metric" && (
         <ActionForm action={quickMetric} successMessage className="grid grid-cols-3 gap-3">
-          <Field label="Metric"><Select name="type" defaultValue="WEIGHT"><option value="WEIGHT">Weight (kg)</option><option value="STEPS">Steps</option><option value="SLEEP_HOURS">Sleep (h)</option><option value="WATER_ML">Water (ml)</option><option value="RESTING_HR">Resting HR</option><option value="ENERGY">Energy 1–5</option><option value="STRESS">Stress 1–5</option></Select></Field>
+          <Field label="Metric"><Select name="type" defaultValue="WEIGHT"><option value="WEIGHT">Weight (kg)</option><option value="STEPS">Steps</option><option value="SLEEP_HOURS">Sleep (h)</option><option value="WATER_ML">Water (ml)</option><option value="RESTING_HR">Resting HR</option><option value="ACTIVE_KCAL">Active energy (kcal)</option><option value="ENERGY">Energy 1–5</option><option value="STRESS">Stress 1–5</option></Select></Field>
           <Field label="Value"><Input name="value" inputMode="decimal" required autoFocus /></Field>
           <Field label="Date"><Input name="date" type="date" defaultValue={d} required /></Field>
           <p className="col-span-2 text-xs text-faint">Private to your profile.</p>

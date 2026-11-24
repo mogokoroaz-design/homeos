@@ -83,3 +83,14 @@ export async function setAccessAction(fd: FormData) {
     await audit({ profileId: viewer.profileId, action: existing ? "access.revoke" : "access.grant", entityType: "profileAccess", entityId: grantee, summary: `${scope}` });
   });
 }
+
+export async function createHealthKeyAction(): Promise<ActionResult<{ key: string }>> {
+  const viewer = await requireViewer();
+  const { createHealthSyncKey } = await import("@/lib/personal/health");
+  return run(async () => ({ key: await createHealthSyncKey(viewer.profileId) }));
+}
+export async function revokeHealthKeyAction() {
+  const viewer = await requireViewer();
+  const { revokeHealthSyncKey } = await import("@/lib/personal/health");
+  await runVoid(() => revokeHealthSyncKey(viewer.profileId));
+}

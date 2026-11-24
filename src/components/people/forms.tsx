@@ -51,7 +51,7 @@ export function TargetsForm({ t }: { t: { kcal: number; protein: number; carbs: 
 export function MetricForm() {
   return (
     <ActionForm action={addMetricAction} className="flex flex-wrap items-end gap-2">
-      <Field label="Metric"><Select name="type" defaultValue="WEIGHT" className="w-44"><option value="WEIGHT">Weight (kg)</option><option value="STEPS">Steps</option><option value="SLEEP_HOURS">Sleep (hours)</option><option value="WATER_ML">Water (ml)</option><option value="RESTING_HR">Resting HR (bpm)</option><option value="ENERGY">Energy (1–5)</option><option value="STRESS">Stress (1–5)</option></Select></Field>
+      <Field label="Metric"><Select name="type" defaultValue="WEIGHT" className="w-44"><option value="WEIGHT">Weight (kg)</option><option value="STEPS">Steps</option><option value="SLEEP_HOURS">Sleep (hours)</option><option value="WATER_ML">Water (ml)</option><option value="RESTING_HR">Resting HR (bpm)</option><option value="ACTIVE_KCAL">Active energy (kcal)</option><option value="ENERGY">Energy (1–5)</option><option value="STRESS">Stress (1–5)</option></Select></Field>
       <Field label="Value"><Input name="value" inputMode="decimal" required className="w-28" /></Field>
       <Field label="Date"><Input type="date" name="date" defaultValue={today()} className="w-40" /></Field>
       <SubmitButton>Log</SubmitButton>

@@ -46,6 +46,7 @@ model HouseholdProfile {
   dietPreferences   String    @default("")
   fitnessGoals      String    @default("")
   dashboardConfig   String    @default("{}")
+  healthTokenHash   String?   @unique // SHA-256 of the Apple Health sync key (key itself is never stored)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -662,12 +663,15 @@ model WellnessMetric {
   profileId String
   profile   HouseholdProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   date      String
-  type      String           // WEIGHT | STEPS | SLEEP_HOURS | WATER_ML | RESTING_HR | ENERGY | STRESS
+  type      String           // WEIGHT | STEPS | SLEEP_HOURS | WATER_ML | RESTING_HR | ACTIVE_KCAL | ENERGY | STRESS
   value     Float
   unit      String
   note      String           @default("")
+  source    String           @default("MANUAL") // MANUAL | APPLE_HEALTH
+  externalKey String?        // stable key for synced data, e.g. "health:STEPS:2026-11-20" (prevents duplicates)
   createdAt DateTime         @default(now())
   @@index([profileId, type, date])
+  @@unique([profileId, externalKey])
 }
 
 model Workout {
@@ -681,8 +685,11 @@ model Workout {
   kcalBurned  Float?
   intensity   String           @default("moderate")
   notes       String           @default("")
+  source      String           @default("MANUAL")
+  externalKey String?
   createdAt   DateTime         @default(now())
   @@index([profileId, date])
+  @@unique([profileId, externalKey])
 }
 
 model Habit {

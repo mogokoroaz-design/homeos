@@ -155,3 +155,13 @@ test("calendar and settings backup", async ({ page }) => {
   await page.getByRole("button", { name: "Back up now" }).click();
   await expect(page.locator("li", { hasText: "manual" }).first()).toBeVisible();
 });
+
+test("Apple Health export upload lands in my private records", async ({ page }) => {
+  const xml = `<?xml version="1.0"?><HealthData>\n <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone" unit="count" startDate="2026-11-19 08:00:00 -0800" endDate="2026-11-19 09:00:00 -0800" value="9876"/>\n <Workout workoutActivityType="HKWorkoutActivityTypeCycling" duration="40" durationUnit="min" sourceName="Watch" startDate="2026-11-19 07:00:00 -0800" endDate="2026-11-19 07:40:00 -0800"/>\n</HealthData>\n`;
+  await unlock(page, "Alex", "1234");
+  await page.goto("/people#health");
+  await page.locator("input[type=file][accept*='.zip']").setInputFiles({ name: "export.xml", mimeType: "text/xml", buffer: Buffer.from(xml) });
+  await expect(page.getByText(/Imported/).first()).toBeVisible();
+  await expect(page.getByText(/1 day of steps/).first()).toBeVisible();
+  await expect(page.getByText("Cycling").first()).toBeVisible();
+});
