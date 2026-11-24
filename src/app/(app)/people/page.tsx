@@ -47,7 +47,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
     listMetrics(viewer, me.id, "WEIGHT", 180), listMetrics(viewer, me.id, "STEPS", 14), listMetrics(viewer, me.id, "SLEEP_HOURS", 14), latestMetrics(viewer, me.id),
     listWorkouts(viewer, me.id, 84), habitsWithStatus(viewer, me.id, d), routinesForDay(viewer, me.id, d), currentTargets(me.id), prisma.profileAccess.findMany({ where: { ownerProfileId: me.id } }),
   ]);
-  const [lastImportRow, lastSyncRow] = await Promise.all([prisma.appSetting.findUnique({ where: { key: `health.lastImport.${me.id}` } }), prisma.appSetting.findUnique({ where: { key: `health.lastSync.${me.id}` } })]);
+  const [lastImportRow, lastSyncRow, lastSyncDataRow] = await Promise.all([prisma.appSetting.findUnique({ where: { key: `health.lastImport.${me.id}` } }), prisma.appSetting.findUnique({ where: { key: `health.lastSync.${me.id}` } }), prisma.appSetting.findUnique({ where: { key: `health.lastSyncData.${me.id}` } })]);
   const activeEnergy = await listMetrics(viewer, me.id, "ACTIVE_KCAL", 14);
   const allRoutines = await prisma.personalRoutine.findMany({ where: { profileId: me.id, active: true }, include: { schedule: true } });
   const recentMetrics = await prisma.wellnessMetric.findMany({ where: { profileId: me.id }, orderBy: [{ date: "desc" }, { createdAt: "desc" }], take: 12 });
@@ -107,7 +107,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
       <SectionTitle><span id="health">Apple Health</span></SectionTitle>
       <Card>
         <CardHeader icon={<HealthIcon />} title="Apple Health & Fitness" sub="Bring in your history and keep new data flowing in — private to you." />
-        <CardBody><HealthCard lastImport={lastImportRow ? JSON.parse(lastImportRow.value) : null} lastSync={lastSyncRow?.value ?? null} hasKey={Boolean(me.healthTokenHash)} /></CardBody>
+        <CardBody><HealthCard lastImport={lastImportRow ? JSON.parse(lastImportRow.value) : null} lastSync={lastSyncRow?.value ?? null} lastSyncData={lastSyncDataRow ? JSON.parse(lastSyncDataRow.value) : []} hasKey={Boolean(me.healthTokenHash)} /></CardBody>
       </Card>
 
       <SectionTitle action={<WorkoutDialog />}>Exercise</SectionTitle>

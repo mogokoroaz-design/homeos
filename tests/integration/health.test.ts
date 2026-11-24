@@ -104,3 +104,34 @@ describe("Apple Health ongoing sync", () => {
     expect(await prisma.workout.count({ where: { profileId: alex.profileId, type: "Walking" } })).toBe(1);
   });
 });
+
+describe("Shortcut-friendly sync payloads", () => {
+  it("parses the text values Shortcuts sends", async () => {
+    const { looseNumber } = await import("@/lib/personal/health");
+    expect(looseNumber("8,123 steps")).toBe(8123);
+    expect(looseNumber("1,234,567")).toBe(1234567);
+    expect(looseNumber("68,4", "kg")).toBe(68.4);
+    expect(looseNumber("150 lb", "kg")).toBeCloseTo(68.04, 2);
+    expect(looseNumber("1673.6 kJ", "kcal")).toBeCloseTo(400, 1);
+    expect(looseNumber("7 hr 20 min", "min")).toBe(440);
+    expect(looseNumber("26400 s", "min")).toBe(440);
+    expect(looseNumber("1.5 L", "ml")).toBe(1500);
+    expect(looseNumber(["300 kcal", "150 kcal"], "kcal")).toBe(450);
+    expect(looseNumber("")).toBeUndefined();
+  });
+
+  it("accepts a flat single-day body over HTTP with the bearer key, defaulting the date", async () => {
+    const { POST } = await import("@/app/api/health/sync/route");
+    const key = await createHealthSyncKey(sam.profileId);
+    const call = (auth: string, body: unknown) => POST(new Request("http://localhost/api/health/sync", { method: "POST", headers: { authorization: auth, "content-type": "application/json" }, body: JSON.stringify(body) }));
+    expect((await call("Bearer hos_nope", { steps: "100" })).status).toBe(401);
+    const res = await call(`Bearer ${key}`, { steps: "6,050 steps", activeKcal: "412 kcal", weight: "150 lb", restingHr: "61 count/min", sleepMinutes: "7 hr 30 min" });
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json).toMatchObject({ ok: true, profile: "Sam", metrics: 5 });
+    const { today } = await import("@/lib/dates");
+    const rows = await prisma.wellnessMetric.findMany({ where: { profileId: sam.profileId, date: today(), source: "APPLE_HEALTH" } });
+    expect(Object.fromEntries(rows.map((r) => [r.type, r.value]))).toEqual({ STEPS: 6050, ACTIVE_KCAL: 412, WEIGHT: 68, RESTING_HR: 61, SLEEP_HOURS: 7.5 });
+    expect((await call(`Bearer ${key}`, { stepz: "1" })).status).toBe(400);
+  });
+});

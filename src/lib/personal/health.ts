@@ -12,6 +12,7 @@ import { prisma } from "../db";
 import { audit } from "../audit";
 import { METRIC_TYPES, type MetricType } from "../validation";
 import { newToken, sha256 } from "../auth/pin";
+import { today as localToday } from "../dates";
 
 export const HEALTH_SOURCE = "APPLE_HEALTH";
 
@@ -270,30 +271,86 @@ export async function profileForSyncKey(key: string | null | undefined) {
   return prisma.householdProfile.findUnique({ where: { healthTokenHash: sha256(key) }, select: { id: true, name: true } });
 }
 
-const num = z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : typeof v === "string" ? Number(v.replace(",", ".")) : v), z.number().finite().nonnegative().optional());
-export const syncPayload = z.object({
-  days: z.array(z.object({
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}/).transform((d) => d.slice(0, 10)),
-    steps: num, activeKcal: num, weightKg: num, restingHr: num, sleepHours: num, waterMl: num,
-  })).max(400).default([]),
-  workouts: z.array(z.object({
-    start: z.string().min(10), type: z.string().max(60), durationMin: num, distanceKm: num, kcal: num,
-  })).max(500).default([]),
-});
+/**
+ * Lenient number parsing for values coming from iPhone Shortcuts, which often sends text such as
+ * "8,123 steps", "68.4 kg", "150 lb", "2 hr 30 min" or "1.2 L". Unit words are honoured when present.
+ */
+export function looseNumber(v: unknown, kind: "count" | "kg" | "kcal" | "hours" | "ml" | "km" | "min" = "count"): number | undefined {
+  if (v === null || v === undefined || v === "") return undefined;
+  if (Array.isArray(v)) {
+    const nums = v.map((x) => looseNumber(x, kind)).filter((x): x is number => x !== undefined);
+    return nums.length ? nums.reduce((a, b) => a + b, 0) : undefined;
+  }
+  if (typeof v === "number") return Number.isFinite(v) && v >= 0 ? v : undefined;
+  const s = String(v).trim().toLowerCase();
+  if (kind === "hours" || kind === "min") {
+    const h = s.match(/(\d+(?:[.,]\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/);
+    const m = s.match(/(\d+(?:[.,]\d+)?)\s*(?:m|min|mins|minute|minutes)\b/);
+    if (h || m) {
+      const total = (h ? Number(h[1].replace(",", ".")) * 60 : 0) + (m ? Number(m[1].replace(",", ".")) : 0);
+      return kind === "hours" ? total / 60 : total;
+    }
+    const sec = s.match(/(\d+(?:[.,]\d+)?)\s*(?:s|sec|secs|seconds)\b/);
+    if (sec) return (Number(sec[1].replace(",", ".")) / 60) / (kind === "hours" ? 60 : 1);
+  }
+  const m = s.match(/-?\d[\d,.' ]*/);
+  if (!m) return undefined;
+  let raw = m[0].replace(/[' ]/g, "");
+  // "8,123" → thousands separator; "68,4" → decimal comma
+  raw = /,\d{3}(?!\d)/.test(raw) && !raw.includes(".") ? raw.replace(/,/g, "") : raw.replace(/,/g, ".");
+  let n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return undefined;
+  if (kind === "kg" && /\b(lb|lbs|pound)/.test(s)) n *= 0.45359237;
+  if (kind === "kg" && /\bst\b|stone/.test(s)) n *= 6.35029318;
+  if (kind === "kcal" && /\bkj\b/.test(s)) n /= 4.184;
+  if (kind === "ml" && /(^|\d|\s)l\b|litre|liter/.test(s) && !/ml\b/.test(s)) n *= 1000;
+  if (kind === "ml" && /fl ?oz/.test(s)) n *= 29.5735295625;
+  if (kind === "km" && /\bmi\b|mile/.test(s)) n *= 1.609344;
+  if (kind === "km" && /\d\s*m\b/.test(s) && !/km/.test(s)) n /= 1000;
+  return n;
+}
 
-export async function applySync(profileId: string, body: z.infer<typeof syncPayload>) {
-  const map: [keyof (typeof body.days)[number], MetricType][] = [["steps", "STEPS"], ["activeKcal", "ACTIVE_KCAL"], ["weightKg", "WEIGHT"], ["restingHr", "RESTING_HR"], ["sleepHours", "SLEEP_HOURS"], ["waterMl", "WATER_ML"]];
+const n = (kind: Parameters<typeof looseNumber>[1]) => z.preprocess((v) => looseNumber(v, kind), z.number().finite().nonnegative().optional());
+const isoDate = z.preprocess((v) => {
+  if (v === undefined || v === null || v === "") return undefined;
+  const m = String(v).match(/(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : v;
+}, z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must look like 2026-11-24").optional());
+
+const dayFields = {
+  date: isoDate,
+  steps: n("count"), activeKcal: n("kcal"), weightKg: n("kg"), weight: n("kg"), restingHr: n("count"),
+  sleepHours: n("hours"), sleepMinutes: n("min"), waterMl: n("ml"),
+};
+const workoutSchema = z.object({ start: z.string().min(10), type: z.string().max(60), durationMin: n("min"), distanceKm: n("km"), kcal: n("kcal") });
+
+/** Accepts {days:[…], workouts:[…]} or a single flat day {steps, weight, …} (what a Shortcut sends). */
+export const syncPayload = z.preprocess((raw) => {
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && !("days" in raw) && !("workouts" in raw)) return { days: [raw] };
+  return raw;
+}, z.object({
+  days: z.array(z.object(dayFields)).max(400).default([]),
+  workouts: z.array(workoutSchema).max(500).default([]),
+}));
+
+export async function applySync(profileId: string, body: z.infer<typeof syncPayload>, today = localToday()) {
   const metrics: { date: string; type: MetricType; value: number }[] = [];
   for (const d of body.days) {
-    for (const [field, type] of map) {
-      const v = d[field] as number | undefined;
-      if (v !== undefined && v > 0) metrics.push({ date: d.date, type, value: type === "WEIGHT" || type === "SLEEP_HOURS" ? Math.round(v * 10) / 10 : Math.round(v) });
+    const date = d.date ?? today;
+    const values: [MetricType, number | undefined][] = [
+      ["STEPS", d.steps], ["ACTIVE_KCAL", d.activeKcal], ["WEIGHT", d.weightKg ?? d.weight], ["RESTING_HR", d.restingHr],
+      ["SLEEP_HOURS", d.sleepHours ?? (d.sleepMinutes !== undefined ? d.sleepMinutes / 60 : undefined)], ["WATER_ML", d.waterMl],
+    ];
+    for (const [type, v] of values) {
+      if (v !== undefined && v > 0) metrics.push({ date, type, value: type === "WEIGHT" || type === "SLEEP_HOURS" ? Math.round(v * 10) / 10 : Math.round(v) });
     }
   }
+  if (!metrics.length && !body.workouts.length) throw new Error("Nothing to sync — check the field names in the Shortcut (steps, activeKcal, weight, restingHr, sleepHours, waterMl).");
   const workouts: ParsedWorkout[] = body.workouts.filter((w) => (w.durationMin ?? 0) > 0).map((w) => ({
     key: `health:workout:${w.start.slice(0, 16)}:${w.type}`, date: w.start.slice(0, 10), type: w.type, durationMin: Math.round(w.durationMin!), distanceKm: w.distanceKm ?? null, kcal: w.kcal ? Math.round(w.kcal) : null, source: "Shortcut",
   }));
   const summary = await saveHealthData(profileId, metrics, workouts);
+  await prisma.appSetting.upsert({ where: { key: `health.lastSyncData.${profileId}` }, create: { key: `health.lastSyncData.${profileId}`, value: JSON.stringify(metrics) }, update: { value: JSON.stringify(metrics) } });
   await prisma.appSetting.upsert({ where: { key: `health.lastSync.${profileId}` }, create: { key: `health.lastSync.${profileId}`, value: new Date().toISOString() }, update: { value: new Date().toISOString() } });
   return summary;
 }
