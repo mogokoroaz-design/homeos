@@ -92,3 +92,19 @@ export function EraseMyData({ hasPin }: { hasPin: boolean }) {
     </DialogButton>
   );
 }
+
+export function OcrTest() {
+  const [res, setRes] = useState<{ engine: string; text: string; ms: number; ok: boolean } | null>(null);
+  const [pending, start] = useTransition();
+  return (
+    <div className="space-y-2">
+      <Button type="button" variant="outline" disabled={pending} onClick={() => start(async () => { const r = await fetch("/api/ocr/test", { method: "POST" }); setRes(r.ok ? await r.json() : { engine: "error", text: (await r.json()).error, ms: 0, ok: false }); })}>{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Test text recognition</Button>
+      {res ? (
+        <div className="rounded-lg bg-surface-2 p-3 text-sm">
+          <p className={res.ok ? "text-accent" : "text-warn"}>{res.engine === "apple" ? "Using Apple’s on-device text recognition (best quality)" : res.engine === "tesseract" ? "Using Tesseract (fallback — Apple’s recognition isn’t available here)" : "Error"} · {res.ms} ms {res.ok ? "· read correctly ✓" : "· didn’t read the sample correctly"}</p>
+          <pre className="mt-1 whitespace-pre-wrap text-xs text-muted">{res.text}</pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}

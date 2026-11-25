@@ -8,7 +8,7 @@ import { dataDir } from "@/lib/paths";
 import { safeJson } from "@/lib/utils";
 import { Card, CardHeader, CardBody, PageHeader, Badge } from "@/components/ui";
 import { InlineAction, SubmitButton } from "@/components/forms";
-import { AISettings, SecuritySettings, RestoreDialog, ImportBackup, EraseMyData } from "@/components/settings/forms";
+import { AISettings, OcrTest, SecuritySettings, RestoreDialog, ImportBackup, EraseMyData } from "@/components/settings/forms";
 import { backupNowAction, deleteBackupAction, saveDashboardAction } from "./actions";
 
 export const metadata = { title: "Settings" };
@@ -26,6 +26,10 @@ export default async function SettingsPage() {
         <Card>
           <CardHeader icon={<Bot className="h-4 w-4 text-accent" />} title="Assistant & AI" sub="Everything works without AI. Optional local AI runs on this Mac through Ollama (free); no data is ever sent to a cloud service." />
           <CardBody><AISettings provider={ai.provider} url={ai.ollamaUrl} model={ai.ollamaModel} visionModel={ai.visionModel} barcodeLookup={await getSetting("food.barcodeLookup", "ask")} /></CardBody>
+        </Card>
+        <Card>
+          <CardHeader icon={<Bot className="h-4 w-4 text-accent" />} title="Reading receipts & labels" sub="Text in photos is read on this Mac — with Apple’s built-in Live Text engine when available, otherwise Tesseract. Nothing is uploaded." />
+          <CardBody><OcrTest /></CardBody>
         </Card>
         <Card>
           <CardHeader icon={<LayoutDashboard className="h-4 w-4 text-accent" />} title="My Today dashboard" />

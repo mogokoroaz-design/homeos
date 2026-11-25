@@ -4,6 +4,8 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { cacheDir } from "../paths";
+import { appleOcr, rowsFromBoxes } from "../ocr/apple";
+import { prepareForOcr } from "../finance/ocr";
 import { loadReference } from "./reference";
 import { normalizeName, singular, titleCase } from "../utils";
 
@@ -13,13 +15,23 @@ export interface NutritionLabel { per100g: NutritionPer100; servingGrams: number
 export interface LabelProduct { name: string; quantity: number | null; unit: string; evidence: string }
 
 // ── OCR at several sizes (big headline text is only read once shrunk; small print needs full size) ──
-export async function ocrLines(image: Buffer): Promise<{ lines: OcrLine[]; text: string }> {
+export async function ocrLines(image: Buffer): Promise<{ lines: OcrLine[]; text: string; engine: "apple" | "tesseract" }> {
+  // On a Mac: Apple's on-device text recognition reads headline lettering and small print in one pass.
+  try {
+    const prepared = await prepareForOcr(image, 2400);
+    const apple = await appleOcr(prepared.png, prepared);
+    if (apple && apple.boxes.length) {
+      const lines: OcrLine[] = apple.boxes.map((b) => ({ text: b.text.trim(), height: b.h * apple.height, conf: b.conf >= 0.3 ? 90 : 40, words: b.text.trim().split(/\s+/).map((w) => ({ text: w, conf: b.conf >= 0.3 ? 90 : 40 })) })); // Apple's confidence is coarse (0.3 / 0.5 / 1)
+      return { lines, text: rowsFromBoxes(apple.boxes).join("\n"), engine: "apple" };
+    }
+  } catch { /* fall back to Tesseract */ }
   const sharp = (await import("sharp")).default;
   const { createWorker } = await import("tesseract.js");
   const base = sharp(image, { failOn: "none" }).rotate(); // honour phone orientation
   const meta = await base.metadata();
-  const long = Math.max(meta.width ?? 1800, meta.height ?? 1800);
-  const width0 = Math.round((meta.width ?? 1800) * Math.min(1, 1800 / long));
+  const mw = meta.autoOrient?.width ?? meta.width ?? 1800;
+  const long = Math.max(mw, meta.autoOrient?.height ?? meta.height ?? 1800);
+  const width0 = Math.round(mw * Math.min(1, 1800 / long));
   const langPath = path.join(process.cwd(), "node_modules", "@tesseract.js-data", "eng", "4.0.0_best_int");
   await fs.mkdir(cacheDir(), { recursive: true });
   const worker = await createWorker("eng", 1, { langPath, cachePath: cacheDir(), gzip: true, logger: () => undefined, errorHandler: () => undefined });
@@ -46,7 +58,7 @@ export async function ocrLines(image: Buffer): Promise<{ lines: OcrLine[]; text:
   } finally {
     await worker.terminate();
   }
-  return { lines: [...seen.values()], text: texts.join("\n") };
+  return { lines: [...seen.values()], text: texts.join("\n"), engine: "tesseract" };
 }
 
 // ── Food vocabulary: every word used in USDA food names + common pantry words ──
