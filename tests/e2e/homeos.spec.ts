@@ -305,3 +305,29 @@ test("project builder: the exact screenshot description creates a working projec
   await page.getByRole("button", { name: "Save entry" }).click();
   await expect(page.getByText("A short walk").last()).toBeVisible();
 });
+
+test("food photo → labels read on-device → review → pantry and shopping list", async ({ page, browser }, info) => {
+  const tag = info.project.name.replace(/\W/g, "").slice(0, 6);
+  const ctx = await browser.newContext({ viewport: { width: 700, height: 420 } });
+  const render = await ctx.newPage();
+  await render.setContent(`<body style="margin:0;background:#fff;font:bold 44px Arial;padding:30px;line-height:1.6">GREEK YOGURT 500 g<br>WHOLE MILK 1 L<br>BASMATI RICE 2 kg</body>`);
+  const png = await render.screenshot();
+  await ctx.close();
+  await unlock(page, "Alex", "1234");
+  await page.goto("/food/pantry");
+  await page.getByTestId("food-photo-input").setInputFiles({ name: "groceries.png", mimeType: "image/png", buffer: png });
+  const rows = page.getByTestId("photo-row");
+  await expect(rows.first()).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByLabel("Item name").nth(0)).toHaveValue(/yogurt/i);
+  // Rice → shopping list; rename milk so this run's items are unique.
+  const rice = rows.filter({ has: page.locator("input[value*='ice' i]") });
+  await rice.getByRole("combobox", { name: /goes to/ }).selectOption("LIST");
+  const milk = rows.filter({ has: page.locator("input[value*='ilk' i]") });
+  await milk.getByLabel("Item name").fill(`Photo milk ${tag}`);
+  await page.getByRole("button", { name: /^Add \d items?$/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: /added to the pantry, 1 added to the shopping list/ })).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).last().click();
+  await expect(page.getByText(new RegExp(`^Photo milk ${tag}$`, "i")).first()).toBeVisible();
+  await page.goto("/food/grocery");
+  await expect(page.getByText(/rice/i).first()).toBeVisible();
+});

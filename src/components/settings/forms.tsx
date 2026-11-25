@@ -7,7 +7,7 @@ import { DialogButton } from "../dialog";
 import { Field, Input, Select, Button, buttonClass } from "../ui";
 import { saveAISettingsAction, testOllamaAction, saveSecurityAction, restoreAction, eraseMyDataAction } from "@/app/(app)/settings/actions";
 
-export function AISettings({ provider, url, model }: { provider: string; url: string; model: string }) {
+export function AISettings({ provider, url, model, visionModel }: { provider: string; url: string; model: string; visionModel: string }) {
   const [u, setU] = useState(url);
   const [m, setM] = useState(model);
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
@@ -17,6 +17,7 @@ export function AISettings({ provider, url, model }: { provider: string; url: st
       <Field label="Assistant engine"><Select name="provider" defaultValue={provider}><option value="rules">Rule-based only (default, no AI needed)</option><option value="ollama">Rules + local AI via Ollama</option></Select></Field>
       <Field label="Ollama address"><Input name="ollamaUrl" value={u} onChange={(e) => setU(e.target.value)} /></Field>
       <Field label="Model" hint="e.g. llama3.2:3b, qwen2.5:7b"><Input name="ollamaModel" value={m} onChange={(e) => setM(e.target.value)} /></Field>
+      <Field label="Photo model (optional)" hint="Recognises food in photos. On 8 GB: qwen2.5vl:3b or moondream. Leave empty to only read printed labels." className="sm:col-span-3"><Input name="visionModel" defaultValue={visionModel} placeholder="qwen2.5vl:3b" className="max-w-xs" /></Field>
       <div className="flex flex-wrap items-center gap-3 sm:col-span-3">
         <Button type="button" variant="outline" disabled={pending} onClick={() => start(async () => setTest(await testOllamaAction(u, m)))}>{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Test connection</Button>
         <SubmitButton>Save</SubmitButton>

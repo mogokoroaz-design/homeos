@@ -20,6 +20,7 @@ export async function saveAISettingsAction(_: ActionResult | null, fd: FormData)
     await setSetting("ai.provider", provider);
     await setSetting("ai.ollamaUrl", url);
     await setSetting("ai.ollamaModel", String(fd.get("ollamaModel") || "llama3.2:3b").trim());
+    if (fd.has("visionModel")) await setSetting("ai.visionModel", String(fd.get("visionModel") ?? "").trim());
     await audit({ profileId: viewer.profileId, action: "settings.ai", entityType: "settings", summary: provider });
   }, "AI settings saved");
 }

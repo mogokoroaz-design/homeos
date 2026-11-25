@@ -9,7 +9,7 @@ import { dateString, num, reqNum, slot, timeString } from "@/lib/validation";
 import { saveRecipe, deleteRecipe, recipeInput, checkRecipeAgainstPantry } from "@/lib/food/recipes";
 import { addMeal, setServing, deleteMeal, updateMeal, copyWeek } from "@/lib/food/mealplan";
 import { syncMealPlanGroceries, addGroceryItem, completeShopping, estimatePrice } from "@/lib/food/grocery";
-import { setPantryQuantity, wastePantryItem } from "@/lib/food/pantry";
+import { setPantryQuantity, wastePantryItem, applyInventoryChanges } from "@/lib/food/pantry";
 import { createFoodFromReference, linkReference, addAlias } from "@/lib/food/catalog";
 import { searchReference } from "@/lib/food/reference";
 import { logPlannedMeal, logFood, deleteLogItem } from "@/lib/food/foodlog";
@@ -357,4 +357,36 @@ export async function setItemSectionAction(fd: FormData) {
   await requireViewer();
   const { categoryForSection } = await import("@/lib/food/sections");
   await runVoid(() => prisma.foodItem.update({ where: { id: String(fd.get("foodItemId")) }, data: { category: categoryForSection(String(fd.get("section"))) } }));
+}
+
+// ── Food photo → pantry / shopping list ──
+const photoItems = z.object({
+  photoId: z.string().uuid().nullable(),
+  items: z.array(z.object({
+    name: z.string().trim().min(1).max(120),
+    quantity: z.number().positive().max(100000).nullable(),
+    unit: z.string().max(20),
+    location: z.enum(["FRIDGE", "FREEZER", "PANTRY", "OTHER"]),
+    foodItemId: z.string().uuid().nullable(),
+    destination: z.enum(["PANTRY", "LIST"]),
+    checked: z.boolean(), // the person confirmed/edited the amount
+  })).min(1, "Nothing selected").max(80),
+});
+export async function addPhotoItemsAction(json: string): Promise<ActionResult<{ pantry: number; list: number }>> {
+  const viewer = await requireViewer();
+  return run(async () => {
+    const { photoId, items } = photoItems.parse(JSON.parse(json));
+    const toPantry = items.filter((i) => i.destination === "PANTRY");
+    const toList = items.filter((i) => i.destination === "LIST");
+    if (toPantry.length) {
+      await applyInventoryChanges(toPantry.map((i) => ({
+        action: "ADD" as const, name: i.name, foodItemId: i.foodItemId, quantity: i.quantity ?? 1, unit: i.quantity === null ? "each" : i.unit,
+        location: i.location, confidence: i.checked && i.quantity !== null ? "CONFIRMED" as const : "ESTIMATED" as const,
+      })), viewer.profileId, photoId ? { type: "photo", id: photoId } : undefined);
+    }
+    for (const i of toList) await addGroceryItem({ name: i.name, quantity: i.quantity ?? 1, unit: i.quantity === null ? "each" : i.unit, source: "PHOTO" });
+    await syncMealPlanGroceries();
+    await audit({ profileId: viewer.profileId, action: "food.photo", entityType: "file", entityId: photoId ?? undefined, summary: `Photo: ${toPantry.length} to pantry, ${toList.length} to shopping list` });
+    return { pantry: toPantry.length, list: toList.length };
+  }, (r) => [r.pantry ? `${r.pantry} added to the pantry` : "", r.list ? `${r.list} added to the shopping list` : ""].filter(Boolean).join(", "));
 }

@@ -10,6 +10,7 @@ export interface CompletionRequest {
   json?: boolean;
   maxTokens?: number;
   timeoutMs?: number;
+  images?: string[]; // base64 (no data: prefix) — only for vision models
 }
 
 export interface AIProvider {
@@ -53,7 +54,7 @@ export class OllamaProvider implements AIProvider {
         stream: false,
         format: req.json ? "json" : undefined,
         options: { temperature: 0.2, num_predict: req.maxTokens ?? 600 },
-        messages: [{ role: "system", content: req.system }, { role: "user", content: req.prompt }],
+        messages: [{ role: "system", content: req.system }, { role: "user", content: req.prompt, ...(req.images?.length ? { images: req.images } : {}) }],
       }),
     });
     if (!res.ok) throw new Error(`Ollama error ${res.status}`);
@@ -67,7 +68,16 @@ export async function getAIConfig() {
     provider: await getSetting("ai.provider", "rules"), // "rules" | "ollama"
     ollamaUrl: await getSetting("ai.ollamaUrl", "http://127.0.0.1:11434"),
     ollamaModel: await getSetting("ai.ollamaModel", "llama3.2:3b"),
+    visionModel: await getSetting("ai.visionModel", "qwen2.5vl:3b"),
   };
+}
+
+/** A local vision-capable model (for food photos), if local AI is on and the model is installed. */
+export async function getVisionModel(): Promise<AIProvider | null> {
+  const cfg = await getAIConfig();
+  if (cfg.provider !== "ollama" || !cfg.visionModel) return null;
+  const p = new OllamaProvider(cfg.ollamaUrl, cfg.visionModel);
+  return (await p.isAvailable()) ? p : null;
 }
 
 /** Returns the local model if configured and reachable, else null (rules only). */

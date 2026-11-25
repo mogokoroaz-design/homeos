@@ -6,6 +6,7 @@ import { formatQuantity } from "@/lib/units";
 import { Card, CardHeader, Badge, Empty, Input, SectionTitle } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
 import { ConversationalPantry, AddPantryForm, EditPantryDialog } from "@/components/food/pantry-tools";
+import { PhotoToPantry } from "@/components/food/photo-to-pantry";
 import { setPantryQtyAction, wastePantryAction } from "../actions";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +24,7 @@ export default async function PantryPage({ searchParams }: { searchParams: Promi
   return (
     <div className="space-y-5">
       <Card className="p-4"><ConversationalPantry /></Card>
-      <Card className="p-4"><AddPantryForm /></Card>
+      <Card className="p-4 space-y-3"><div className="flex flex-wrap items-center gap-2"><PhotoToPantry /><span className="text-sm text-faint">Snap your groceries, fridge shelf or a product label.</span></div><AddPantryForm /></Card>
       {low.length ? <div className="flex flex-wrap gap-2 text-sm"><span className="text-warn">Low stock:</span>{low.map((l) => <Badge key={l.name} tone="warn">{l.name} · {formatQuantity(l.quantity, l.unit)}</Badge>)}</div> : null}
       <form><Input name="q" defaultValue={q} placeholder="Search pantry" className="max-w-xs" /></form>
       {items.length ? LOCS.map(([loc, label]) => {
