@@ -21,6 +21,8 @@ export function ProjectBuilder() {
   const [refine, setRefine] = useState("");
   const [refineResult, setRefineResult] = useState<{ changes: string[]; notUnderstood: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
   const propose = (t: string) => start(async () => {
@@ -38,12 +40,22 @@ export function ProjectBuilder() {
     setRefineResult({ changes: r.data!.changes, notUnderstood: r.data!.notUnderstood });
     if (r.data!.changes.length) setRefine("");
   });
-  const create = () => start(async () => {
+  // Creating shows its own status and any error right next to the button.
+  const create = async () => {
     if (!def) return;
-    const r = await createProjectAction(JSON.stringify(def));
-    if (!r.ok) { setError(r.error); return; }
-    router.push(`/projects/${r.data!.id}`);
-  });
+    setCreateError(null);
+    setCreating(true);
+    try {
+      const r = await createProjectAction(JSON.stringify(def));
+      if (!r.ok) { setCreateError(r.error); return; }
+      router.push(`/projects/${r.data!.id}`);
+    } catch (e) {
+      setCreateError(e instanceof Error ? `Couldn't reach HomeOS: ${e.message}. Is it still running in Terminal?` : "Couldn't create the project.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const setField = (i: number, f: FieldDef) => def && setDef({ ...def, fields: def.fields.map((x, j) => (j === i ? f : x)) });
   return (
     <div className="space-y-5">
@@ -56,7 +68,7 @@ export function ProjectBuilder() {
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {def ? (
         <Card className="space-y-4 p-5">
-          <div className="flex flex-wrap items-center gap-2"><p className="font-semibold">Proposed project</p><Badge><Lock className="h-3 w-3" />private</Badge><Badge tone="info">{engine === "rules" ? "rule-based" : engine}</Badge></div>
+          <div className="flex flex-wrap items-center gap-2"><p className="font-semibold">Proposed project</p><Badge><Lock className="h-3 w-3" />private</Badge><Badge tone="info">{engine === "rules" ? "rule-based" : engine}</Badge><Button variant="primary" size="sm" className="ml-auto" onClick={() => void create()} disabled={creating || pending}>{creating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{creating ? "Creating…" : "Approve & create"}</Button></div>
           {notes.length ? <ul className="space-y-1 text-sm text-muted">{notes.map((n) => <li key={n}>• {n}</li>)}</ul> : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Name"><Input value={def.name} onChange={(e) => setDef({ ...def, name: e.target.value })} /></Field>
@@ -85,7 +97,8 @@ export function ProjectBuilder() {
             <Checkbox label={def.reminder ? `Private reminder at ${def.reminder.time}` : "Add a daily private reminder at 21:00"} checked={Boolean(def.reminder)} onChange={(e) => setDef({ ...def, reminder: e.target.checked ? { time: "21:00", weekdays: "0,1,2,3,4,5,6", message: `Time for ${def.name}` } : null })} />
             {def.integrations.map((ig, i) => <Checkbox key={i} label={`Propose sharing “${ig.label}” (${ig.metric.replace("_", " ")}) with household Insights — needs separate approval after creation`} checked onChange={() => setDef({ ...def, integrations: def.integrations.filter((_, j) => j !== i) })} />)}
           </div>
-          <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setDef(null)}>Start over</Button><Button variant="primary" onClick={create} disabled={pending}>Approve &amp; create</Button></div>
+          {createError ? <p role="alert" ref={(el) => el?.scrollIntoView({ block: "center", behavior: "smooth" })} className="rounded-lg border border-[#55302d] bg-danger-dim px-3 py-2 text-sm text-danger">Couldn&apos;t create the project: {createError}</p> : null}
+          <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setDef(null)}>Start over</Button><Button variant="primary" onClick={() => void create()} disabled={creating || pending}>{creating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{creating ? "Creating…" : "Approve & create"}</Button></div>
         </Card>
       ) : null}
     </div>

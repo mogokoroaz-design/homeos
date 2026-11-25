@@ -119,7 +119,7 @@ test("project builder: natural language → private project → entry", async ({
   await page.getByRole("button", { name: "Apply" }).click();
   await expect(page.getByText(/Added “Photo”/)).toBeVisible();
   await expect(page.getByText(/1–10 rating/)).toBeVisible();
-  await page.getByRole("button", { name: /Approve/ }).click();
+  await page.getByRole("button", { name: /Approve/ }).last().click();
   await page.waitForURL(/\/projects\/[0-9a-f-]{36}$/);
   await page.getByLabel("What happened").fill("Long walk by the river");
   await page.getByRole("button", { name: "Save entry" }).click();
@@ -160,7 +160,7 @@ test("receipt photo → local OCR → review → shared ledger", async ({ page, 
   await page.waitForURL(/\/money\/receipts\/[0-9a-f-]{36}$/, { timeout: 90_000 });
   await expect(page.getByText("Review receipt")).toBeVisible();
   await expect(page.getByLabel("Item").first()).toHaveValue(/APPLES/);
-  await page.getByRole("button", { name: /Approve/ }).click();
+  await page.getByRole("button", { name: /Approve/ }).last().click();
   await expect(page.getByText(/expense recorded|Saved to the household ledger/).first()).toBeVisible();
   await page.goto("/money/expenses?month=2026-11");
   await expect(page.getByText(new RegExp(`CORNER MARKET`)).first()).toBeVisible();
@@ -284,7 +284,7 @@ test("project builder: the exact screenshot description creates a working projec
   await page.getByPlaceholder(/daily journal/).fill("I want to create a daily journal where I can record my mood, what happened during the day, what I learned, what I am grateful for and how I felt. this should help me learn how to regulate emotions better.");
   await page.getByRole("button", { name: "Propose structure" }).click();
   await expect(page.getByText(/because you mentioned emotional regulation/)).toBeVisible();
-  await page.getByRole("button", { name: /Approve/ }).click();
+  await page.getByRole("button", { name: /Approve/ }).last().click();
   await page.waitForURL(/\/projects\/[0-9a-f-]{36}$/);
   await page.getByLabel("What helped").fill("A short walk");
   await page.getByRole("button", { name: "Save entry" }).click();
