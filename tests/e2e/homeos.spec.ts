@@ -11,34 +11,49 @@ async function unlock(page: Page, name: string, pin: string) {
   await page.waitForURL("**/today");
 }
 async function lock(page: Page) {
-  await page.getByRole("button", { name: "Lock or switch profile" }).click();
-  await page.waitForURL("**/lock");
+  await page.getByRole("button", { name: /^Profile:/ }).click();
+  await page.getByRole("menuitem", { name: "Lock" }).click();
+  await page.waitForURL("**/lock**");
 }
 
-test("setup needs only names; each person adds their own PIN from their profile", async ({ page }) => {
+test("opens straight to the dashboard; switch people from the name menu; PINs are optional", async ({ page }) => {
   await page.goto("/");
-  if (page.url().includes("/lock")) return; // second project reuses the household
-  await page.waitForURL("**/setup");
+  await page.waitForURL(/\/(lock|setup|today)/);
+  if (!page.url().includes("/setup")) return; // second project reuses the household
   await expect(page.locator("input[type=password]")).toHaveCount(0);
   await page.fill("input[name=householdName]", "E2E Home");
   await page.fill("input[name=name0]", "Alex");
   await page.fill("input[name=name1]", "Sam");
   await page.getByRole("button", { name: "Create household" }).click();
-  await page.waitForURL("**/lock");
-  await expect(page.getByText("No PIN")).toHaveCount(2);
+  // No PIN screen: straight to the dashboard.
+  await page.waitForURL("**/today");
+  await expect(page.getByRole("heading", { name: /Alex/ })).toBeVisible();
+  await page.goto("/");
+  await page.waitForURL("**/today");
   for (const [name, pin] of [["Alex", "1234"], ["Sam", "5678"]] as const) {
-    await page.getByRole("button", { name }).click(); // no PIN → opens straight away
-    await page.waitForURL("**/today");
-    await page.goto("/people#security");
-    await expect(page.getByText(/anyone on this device can open your profile/)).toBeVisible();
-    await page.getByRole("button", { name: "Add a PIN" }).click();
-    await page.getByLabel("PIN (4–8 digits)").fill(pin);
-    await page.getByLabel("Repeat PIN").fill(pin);
-    await page.getByRole("button", { name: "Save PIN" }).click();
-    await expect(page.getByText(/PIN added/)).toBeVisible();
-    await lock(page);
+    // Pick the person from the name menu → their profile page.
+    await page.getByRole("button", { name: /^Profile:/ }).click();
+    await page.getByRole("menuitem", { name }).click();
+    await page.waitForURL("**/people");
+    await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Set a PIN" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Add a PIN" }).click();
+    await dialog.getByLabel("PIN (4–8 digits)").fill(pin);
+    await dialog.getByLabel("Repeat PIN").fill(pin);
+    await dialog.getByRole("button", { name: "Save PIN" }).click();
+    await expect(dialog.getByText(/PIN added/)).toBeVisible();
+    await page.keyboard.press("Escape");
   }
-  await expect(page.getByText("No PIN")).toHaveCount(0);
+  // Switching to someone with a PIN asks for it.
+  await page.getByRole("button", { name: /^Profile:/ }).click();
+  await page.getByRole("menuitem", { name: "Alex" }).click();
+  await page.waitForURL(/\/lock\?profile=/);
+  await expect(page.getByRole("heading", { name: "Enter Alex's PIN" })).toBeVisible();
+  await page.locator("#pin").fill("1234");
+  await page.getByRole("button", { name: "Unlock" }).click();
+  await page.waitForURL("**/people");
+  await expect(page.getByRole("button", { name: "PIN on" })).toBeVisible();
 });
 
 test("wrong PIN is rejected; correct PIN unlocks", async ({ page }) => {

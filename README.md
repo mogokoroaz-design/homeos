@@ -17,7 +17,7 @@ npm run setup        # creates .env and data/, applies DB migrations, builds the
 npm start            # http://localhost:3000
 ```
 
-On first open you'll name the household and each person — no PINs needed. Each person can add a PIN later from their profile (People → Privacy & PIN) to lock their private records.
+On first open you'll name the household and each person — no PINs. HomeOS then opens straight to the Today dashboard. Tap your name (top right) to switch between people; each person can set a PIN from their profile (the **Set a PIN** button next to their name) to lock their private records.
 
 Development mode with hot reload: `npm run dev`.
 
@@ -124,7 +124,7 @@ Pages read through services; mutations go through server actions that validate w
 
 ## 5. Privacy & security model
 
-- **Each person can lock their profile with a PIN** (optional; added, changed or removed from People → Privacy & PIN). A profile without a PIN opens with one tap and shows a reminder that anyone on the device can open it. PINs are stored as salted scrypt hashes. 5 wrong attempts → 5-minute lockout. Sessions are random tokens (stored hashed) in an httpOnly cookie, expire after inactivity (default 30 min, configurable) and are cleared by Lock/Switch.
+- **Each person can lock their profile with a PIN** (optional; added, changed or removed from People → Privacy & PIN). A profile without a PIN opens directly (each device reopens the last profile used) and shows a reminder that anyone on the device can open it; switching to a profile with a PIN asks for it. PINs are stored as salted scrypt hashes. 5 wrong attempts → 5-minute lockout. Sessions are random tokens (stored hashed) in an httpOnly cookie, expire after inactivity (default 30 min, configurable) and are cleared by Lock/Switch.
 - **Authorization is enforced server-side in services**, not by which profile is selected: wellness metrics, workouts, habits, routines, food logs and targets require `owner === viewer` or an explicit `ProfileAccess` grant for that category (wellness / nutrition / fitness / habits), which only the owner can switch on. Projects are owner-only with no override. Private notes, events, reminders and uploaded files are filtered by owner + visibility; files are only served via `/api/files/:id` after that check.
 - Shared household data (recipes, pantry, meal plan, groceries, ledger, bills, tasks, providers, shared notes/events) is visible to all members.
 - Audit log of important changes; private items are logged without content.

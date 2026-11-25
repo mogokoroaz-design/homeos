@@ -4,8 +4,9 @@ import { unlockAction } from "../actions";
 import { cn } from "@/lib/utils";
 import { Delete, Loader2 } from "lucide-react";
 
-export function PinPad({ profiles, next }: { profiles: { id: string; name: string; color: string; hasPin: boolean }[]; next: string }) {
-  const [selected, setSelected] = useState<string | null>(profiles.length === 1 && profiles[0].hasPin ? profiles[0].id : null);
+export function PinPad({ profiles, next, initialProfileId }: { profiles: { id: string; name: string; color: string; hasPin: boolean }[]; next: string; initialProfileId?: string }) {
+  const preset = profiles.find((p) => p.id === initialProfileId && p.hasPin)?.id ?? (profiles.length === 1 && profiles[0].hasPin ? profiles[0].id : null);
+  const [selected, setSelected] = useState<string | null>(preset);
   const openRef = useRef<HTMLFormElement>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   useEffect(() => { if (openId) openRef.current?.requestSubmit(); }, [openId]);

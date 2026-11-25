@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ShieldCheck, ShieldAlert } from "lucide-react";
 import { ActionForm, SubmitButton } from "../forms";
 import { Field, Input, Button } from "../ui";
+import { Dialog } from "../dialog";
 import { setPinAction } from "@/app/(app)/settings/actions";
 
 /** Add, change or remove this profile's PIN. */
@@ -37,5 +38,20 @@ export function PinCard({ hasPin }: { hasPin: boolean }) {
       ) : null}
       {done ? <p role="status" className="rounded-lg border border-[#38503f] bg-accent-dim px-3 py-2 text-sm text-accent">{done}</p> : null}
     </div>
+  );
+}
+
+/** Compact button next to the person's name: "Set a PIN" (or "PIN on") opening the PIN settings. */
+export function PinButton({ hasPin, name }: { hasPin: boolean; name: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant={hasPin ? "outline" : "primary"} onClick={() => setOpen(true)}>
+        {hasPin ? <ShieldCheck className="h-4 w-4 text-accent" /> : <ShieldAlert className="h-4 w-4" />}{hasPin ? "PIN on" : "Set a PIN"}
+      </Button>
+      <Dialog open={open} onClose={() => setOpen(false)} title={hasPin ? `${name}'s PIN` : `Set a PIN for ${name}`}>
+        <PinCard hasPin={hasPin} />
+      </Dialog>
+    </>
   );
 }

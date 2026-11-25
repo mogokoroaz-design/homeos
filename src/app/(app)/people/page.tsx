@@ -12,7 +12,7 @@ import { Card, CardHeader, CardBody, Badge, SectionTitle } from "@/components/ui
 import { InlineAction } from "@/components/forms";
 import { TrendLine, Bars } from "@/components/charts";
 import { HealthCard, HealthIcon } from "@/components/people/health-card";
-import { PinCard } from "@/components/people/pin-card";
+import { PinCard, PinButton } from "@/components/people/pin-card";
 import { ProfileForm, TargetsForm, MetricForm, WorkoutDialog, HabitForm, RoutineDialog } from "@/components/people/forms";
 import { deleteMetricAction, deleteWorkoutAction, toggleHabitAction, toggleRoutineAction, deletePersonalAction, setAccessAction } from "./actions";
 import { cn } from "@/lib/utils";
@@ -66,7 +66,10 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
           <h1 className="text-[26px] font-semibold tracking-tight">{me.name}</h1>
           {me.pinHash ? <p className="mt-1 flex items-center gap-1.5 text-sm text-muted"><Lock className="h-3.5 w-3.5" />Your wellness and nutrition records are private to you.</p> : <p className="mt-1 text-sm text-warn">No PIN yet — anyone on this device can open your profile. <a href="#security" className="underline">Add a PIN</a></p>}
         </div>
-        <div className="flex gap-2">{others.map((o) => <Link key={o.id} href={`/people?member=${o.id}`} className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm hover:bg-surface-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: o.color }} />{o.name}</Link>)}</div>
+        <div className="flex flex-wrap items-center gap-2">
+          {others.map((o) => <Link key={o.id} href={`/people?member=${o.id}`} title={`What ${o.name} shares with you`} className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm text-muted hover:bg-surface-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: o.color }} />{o.name}&apos;s shared</Link>)}
+          <PinButton hasPin={Boolean(me.pinHash)} name={me.name} />
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-5">
