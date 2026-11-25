@@ -331,3 +331,17 @@ test("food photo → labels read on-device → review → pantry and shopping li
   await page.goto("/food/grocery");
   await expect(page.getByText(/rice/i).first()).toBeVisible();
 });
+
+test("typed recipe keeps its ingredients even without pressing Parse & add", async ({ page }, info) => {
+  await unlock(page, "Alex", "1234");
+  await page.goto("/food/recipes/new");
+  const name = `Typed chicken ${info.project.name}`;
+  await page.getByLabel("Recipe name").fill(name);
+  await page.getByLabel("Ingredients, one per line").fill("500 g minced chicken\n2 tbsp soy sauce\n1 onion, finely chopped");
+  await page.getByLabel("Instructions").fill("Cook the chicken\nAdd sauce");
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await page.waitForURL(/\/food\/recipes\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("3 items", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /500 g chicken, minced/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /2 tbsp soy sauce/ })).toBeVisible();
+});

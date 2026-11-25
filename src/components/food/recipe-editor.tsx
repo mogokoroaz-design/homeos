@@ -27,15 +27,19 @@ export function RecipeEditor({ initial, id, importId, onSavedHref }: { initial: 
   const set = <K extends keyof EditorRecipe>(k: K, v: EditorRecipe[K]) => setR((x) => ({ ...x, [k]: v }));
   const setIng = (i: number, patch: Partial<EditorIngredient>) => set("ingredients", r.ingredients.map((x, j) => (j === i ? { ...x, ...patch, ...(patch.name !== undefined ? { foodItemId: null } : {}) } : x)));
   const move = (i: number, d: -1 | 1) => { const a = [...r.ingredients]; const t = a[i + d]; if (!t) return; a[i + d] = a[i]; a[i] = t; set("ingredients", a); };
+  const parsePaste = (text: string): EditorIngredient[] => text.split("\n").map((l) => l.trim()).filter(Boolean)
+    .map((l) => { const p = parseIngredientLine(l); return { name: p.name, quantity: p.quantity, unit: p.unit, note: p.note, optional: p.optional }; })
+    .filter((i) => i.name.trim());
   const addPasted = () => {
-    const lines = paste.split("\n").map((l) => l.trim()).filter(Boolean);
-    set("ingredients", [...r.ingredients, ...lines.map((l) => { const p = parseIngredientLine(l); return { name: p.name, quantity: p.quantity, unit: p.unit, note: p.note, optional: p.optional }; })]);
+    set("ingredients", [...r.ingredients, ...parsePaste(paste)]);
     setPaste("");
     setShowPaste(false);
   };
   const save = () => start(async () => {
     setError(null);
-    const res = await saveRecipeAction(JSON.stringify(r), id, importId);
+    // Lines typed in the box but not yet "Parse & add"-ed are included, and empty rows are skipped.
+    const ingredients = [...r.ingredients.filter((i) => i.name.trim()), ...parsePaste(paste)];
+    const res = await saveRecipeAction(JSON.stringify({ ...r, ingredients }), id, importId);
     if (!res.ok) { setError(res.error); return; }
     router.push(onSavedHref ?? `/food/recipes/${res.data!.id}`);
     router.refresh();
@@ -65,8 +69,9 @@ export function RecipeEditor({ initial, id, importId, onSavedHref }: { initial: 
         </div>
         {showPaste ? (
           <div className="mb-4 space-y-2 rounded-xl bg-surface-2 p-3">
-            <Textarea value={paste} onChange={(e) => setPaste(e.target.value)} placeholder={"One ingredient per line, e.g.\n500 g chicken thighs, boneless\n2 tbsp olive oil\n4 cloves garlic"} className="min-h-28" />
+            <Textarea value={paste} onChange={(e) => setPaste(e.target.value)} aria-label="Ingredients, one per line" placeholder={"One ingredient per line, e.g.\n500 g chicken thighs, boneless\n2 tbsp olive oil\n4 cloves garlic"} className="min-h-28" />
             <div className="flex justify-end"><Button type="button" size="sm" variant="primary" onClick={addPasted} disabled={!paste.trim()}>Parse &amp; add</Button></div>
+            <p className="text-xs text-faint">Lines left here are added automatically when you save.</p>
           </div>
         ) : null}
         <div className="space-y-2">
@@ -87,7 +92,7 @@ export function RecipeEditor({ initial, id, importId, onSavedHref }: { initial: 
               </div>
             </div>
           ))}
-          {!r.ingredients.length ? <p className="text-sm text-faint">No ingredients yet.</p> : null}
+          {!r.ingredients.length && !paste.trim() ? <p className="text-sm text-faint">No ingredients yet — type them in the box above (one per line) or press Add.</p> : null}
         </div>
         <p className="mt-3 text-xs text-faint">Ingredients are matched to your ingredient catalogue. Nutrition is calculated from linked USDA reference data or label values — never invented.</p>
       </Card>
