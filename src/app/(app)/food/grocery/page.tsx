@@ -1,4 +1,7 @@
-import { ShoppingCart, Trash2 } from "lucide-react";
+import { ShoppingCart, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import { orderedSections, sectionFor } from "@/lib/food/sections";
+import { getSetting } from "@/lib/settings";
+import { AutoSubmitSelect } from "@/components/auto-submit";
 import { requireViewer } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { getActiveList, getGroceryRange, computeRequirements } from "@/lib/food/grocery";
@@ -8,7 +11,7 @@ import { formatDate } from "@/lib/dates";
 import { Card, CardHeader, Badge, Empty, SectionTitle } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
 import { CompleteShopping, AddGroceryForm, SyncGroceryForm } from "@/components/food/grocery-forms";
-import { toggleGroceryAction, setGroceryPriceAction, deleteGroceryAction } from "../actions";
+import { toggleGroceryAction, setGroceryPriceAction, deleteGroceryAction, moveSectionAction, setItemSectionAction } from "../actions";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Groceries" };
@@ -24,8 +27,9 @@ export default async function GroceryPage() {
     prisma.store.findMany({ select: { name: true }, orderBy: { name: "asc" } }),
     prisma.shoppingHistory.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
   ]);
+  const sections = orderedSections(await getSetting("grocery.sectionOrder", "[]"));
   const groups = new Map<string, typeof items>();
-  for (const it of items) { const c = it.foodItem?.category ?? "other"; groups.set(c, [...(groups.get(c) ?? []), it]); }
+  for (const it of items) { const k = sectionFor(it.foodItem?.category); groups.set(k, [...(groups.get(k) ?? []), it]); }
   const est = items.filter((i) => !i.checked).reduce((a, i) => a + (i.estimatedPriceCents ?? 0), 0);
   const actual = items.filter((i) => i.checked).reduce((a, i) => a + (i.actualPriceCents ?? 0), 0);
   const checked = items.filter((i) => i.checked).length;
@@ -38,9 +42,9 @@ export default async function GroceryPage() {
           <p className="text-sm text-muted">{items.length - checked} to buy · est. <span className="tabular text-ink">{formatCents(est, viewer.currency)}</span>{checked ? <> · {checked} in cart{actual ? <> · <span className="tabular text-ink">{formatCents(actual, viewer.currency)}</span></> : null}</> : null}</p>
           {checked ? <CompleteShopping listId={list.id} checkedCount={checked} actualTotal={actual ? centsToInput(actual) : ""} profiles={profiles} viewerId={viewer.profileId} stores={stores.map((s) => s.name)} /> : null}
         </div>
-        {items.length ? [...groups.entries()].sort().map(([cat, list]) => (
-          <Card key={cat}>
-            <CardHeader title={cat[0].toUpperCase() + cat.slice(1)} />
+        {items.length ? sections.filter((sec) => groups.has(sec.key)).map((sec) => [sec, groups.get(sec.key)!] as const).map(([sec, list]) => (
+          <Card key={sec.key}>
+            <CardHeader title={sec.label} sub={`${list.filter((i) => !i.checked).length} to get`} />
             <ul className="divide-y divide-line border-t border-line">
               {list.map((it) => (
                 <li key={it.id} className={cn("flex flex-wrap items-center gap-3 px-4 py-2.5", it.checked && "opacity-60")}>
@@ -58,6 +62,14 @@ export default async function GroceryPage() {
                     <input name="price" defaultValue={centsToInput(it.actualPriceCents)} placeholder={it.estimatedPriceCents ? `~${centsToInput(it.estimatedPriceCents)}` : "price"} inputMode="decimal" aria-label="Price paid" className="h-9 w-20 rounded-lg border border-line-strong bg-surface-2 px-2 text-right tabular outline-none" />
                     <button className="h-9 rounded-lg border border-line-strong px-2.5 text-xs hover:bg-surface-3">Save</button>
                   </form>
+                  {it.foodItemId ? (
+                    <form action={setItemSectionAction}>
+                      <input type="hidden" name="foodItemId" value={it.foodItemId} />
+                      <AutoSubmitSelect name="section" defaultValue={sec.key} aria-label={`Section for ${it.name}`} className="h-9 w-28 rounded-lg border border-line-strong bg-surface-2 px-1.5 text-xs text-muted">
+                        {sections.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+                      </AutoSubmitSelect>
+                    </form>
+                  ) : null}
                   <InlineAction action={deleteGroceryAction} fields={{ id: it.id }} variant="ghost" size="iconSm" title="Remove"><Trash2 className="h-4 w-4" /></InlineAction>
                 </li>
               ))}
@@ -76,6 +88,19 @@ export default async function GroceryPage() {
               </li>
             ))}
             {!reqs.length ? <li className="px-4 py-4 text-faint">No planned recipe meals in this range.</li> : null}
+          </ul>
+        </Card>
+        <Card>
+          <CardHeader title="Store layout" sub="Order sections the way you walk through your shop" />
+          <ul aria-label="Store layout" className="divide-y divide-line border-t border-line text-sm">
+            {sections.map((sec, k) => (
+              <li key={sec.key} className="flex items-center gap-2 px-4 py-1.5">
+                <span className="w-5 text-faint tabular">{k + 1}</span>
+                <span className="flex-1" data-section>{sec.label}</span>
+                <InlineAction action={moveSectionAction} fields={{ key: sec.key, dir: "up" }} variant="ghost" size="iconSm" title={`Move ${sec.label} up`}><ArrowUp className="h-3.5 w-3.5" /></InlineAction>
+                <InlineAction action={moveSectionAction} fields={{ key: sec.key, dir: "down" }} variant="ghost" size="iconSm" title={`Move ${sec.label} down`}><ArrowDown className="h-3.5 w-3.5" /></InlineAction>
+              </li>
+            ))}
           </ul>
         </Card>
         <SectionTitle>Shopping history</SectionTitle>

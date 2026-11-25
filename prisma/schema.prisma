@@ -147,14 +147,36 @@ model Recipe {
   tags               String   @default("") // comma separated
   favourite          Boolean  @default(false)
   createdByProfileId String?
+  variantOfId        String?  // set when this recipe is an adaptation of another (original is unchanged)
+  variantOf          Recipe?  @relation("RecipeVariants", fields: [variantOfId], references: [id], onDelete: SetNull)
+  variants           Recipe[] @relation("RecipeVariants")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  collections RecipeCollectionItem[]
   ingredients RecipeIngredient[]
   images      RecipeImage[]
   mealItems   MealPlanItem[]
   imports     RecipeImport[]
   @@index([name])
+}
+
+model RecipeCollection {
+  id        String                 @id @default(uuid())
+  name      String                 @unique
+  emoji     String                 @default("")
+  sortOrder Int                    @default(0)
+  createdAt DateTime               @default(now())
+  items     RecipeCollectionItem[]
+}
+
+model RecipeCollectionItem {
+  collectionId String
+  collection   RecipeCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  recipeId     String
+  recipe       Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  addedAt      DateTime         @default(now())
+  @@id([collectionId, recipeId])
 }
 
 model RecipeIngredient {

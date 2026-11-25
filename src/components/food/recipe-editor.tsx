@@ -11,6 +11,7 @@ export interface EditorIngredient { name: string; quantity: number | null; unit:
 export interface EditorRecipe {
   name: string; cuisine: string; category: string; servings: number; prepMinutes: number | null; cookMinutes: number | null; temperature: string;
   instructions: string; sourceType: string; sourceUrl: string | null; notes: string; tags: string; favourite: boolean; ingredients: EditorIngredient[];
+  variantOfId?: string | null;
 }
 
 export const EMPTY_RECIPE: EditorRecipe = { name: "", cuisine: "", category: "main", servings: 2, prepMinutes: null, cookMinutes: null, temperature: "", instructions: "", sourceType: "MANUAL", sourceUrl: null, notes: "", tags: "", favourite: false, ingredients: [] };

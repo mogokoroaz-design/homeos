@@ -225,3 +225,54 @@ test("share sheet: shared caption → unlock → automatic import → review", a
   await expect(page.getByLabel("Recipe name")).toHaveValue("Garlic Yogurt Dip");
   await expect(page.getByLabel("Ingredient").first()).toHaveValue("greek yogurt");
 });
+
+test("every page loads without errors", async ({ page }) => {
+  const errors: string[] = [];
+  let current = "";
+  page.on("pageerror", (e) => errors.push(`${current}: ${e.message.slice(0, 80)}`));
+  await unlock(page, "Alex", "1234");
+  for (const path of ["/today", "/people", "/food", "/food/plan", "/food/plan?view=month", "/food/recipes", "/food/recipes/new", "/food/pantry", "/food/grocery", "/food/nutrition", "/food/assistant", "/food/import", "/food/catalogue", "/home", "/home/services", "/home/maintenance", "/money", "/money/expenses", "/money/receipts", "/money/bills", "/money/budgets", "/money/prices", "/projects", "/projects/new", "/calendar", "/insights", "/notes", "/assistant", "/settings"]) {
+    current = path;
+    const res = await page.goto(path);
+    expect(res?.status(), path).toBe(200);
+    await expect(page.getByText(/Application error|Something went wrong|Unhandled Runtime Error/), path).toHaveCount(0);
+    await expect(page.locator("main h1, main h2").first(), path).toBeVisible();
+  }
+  expect(errors).toEqual([]);
+});
+
+test("adapt a recipe into a variant and file it in a collection", async ({ page }, info) => {
+  await unlock(page, "Alex", "1234");
+  await page.goto("/food/recipes");
+  await page.getByText(`Lemon pasta ${info.project.name}`).first().click();
+  await page.waitForURL(/\/food\/recipes\/[0-9a-f-]{36}$/);
+  await page.getByRole("button", { name: "Adapt" }).click();
+  await page.getByRole("button", { name: "Gluten-free" }).click();
+  await expect(page.getByText(/spaghetti → gluten-free spaghetti/)).toBeVisible();
+  await page.getByRole("button", { name: "Save as new recipe" }).click();
+  await expect(page.getByRole("heading", { name: `Lemon pasta ${info.project.name} (Gluten-free)` })).toBeVisible();
+  await expect(page.getByText("Adapted from").first()).toBeVisible();
+  await page.getByRole("button", { name: "Collections" }).click();
+  await page.getByLabel("New collection name").fill(`Quick ${info.project.name}`);
+  await page.getByRole("button", { name: "Create" }).click();
+  await expect(page.getByRole("dialog").getByText(`Quick ${info.project.name}`)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.goto("/food/recipes");
+  await page.getByRole("link", { name: new RegExp(`Quick ${info.project.name}`) }).click();
+  await expect(page.getByText(`Lemon pasta ${info.project.name} (Gluten-free)`)).toBeVisible();
+  await expect(page.getByText(`Lemon pasta ${info.project.name}`, { exact: true })).toHaveCount(0);
+});
+
+test("shopping list is grouped by store section and sections can be reordered", async ({ page }) => {
+  await unlock(page, "Alex", "1234");
+  await page.goto("/food/grocery");
+  await page.getByPlaceholder("Add item…").fill("bananas");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Fruit & veg" })).toBeVisible();
+  const first = async () => (await page.getByRole("list", { name: "Store layout" }).locator("[data-section]").first().textContent())?.trim();
+  const before = await first();
+  await page.getByRole("button", { name: `Move ${before} down` }).click();
+  await expect.poll(first).not.toBe(before);
+  await page.getByRole("button", { name: `Move ${before} up` }).click(); // restore for the next run
+  await expect.poll(first).toBe(before);
+});

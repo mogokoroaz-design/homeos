@@ -13,6 +13,7 @@ import { MealCard } from "@/components/food/meal-card";
 import { AddMealDialog } from "@/components/food/meal-dialogs";
 import { PlanAssistant } from "@/components/food/plan-assistant";
 import { copyWeekAction } from "../actions";
+import { parseDietPrefs, recipeViolations } from "@/lib/food/diet";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Meal plan" };
@@ -55,6 +56,8 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
   const weekStart = startOfWeek(sp.week && isDateString(sp.week) ? sp.week : today());
   const days = dateRange(weekStart, addDays(weekStart, 6));
   const items = await getMealItems(weekStart, addDays(weekStart, 6));
+  const diets = (await prisma.householdProfile.findMany({ select: { id: true, name: true, dietPreferences: true } })).map((p) => ({ ...p, prefs: parseDietPrefs(p.dietPreferences) }));
+  const dietWarnings = (m: (typeof items)[number]) => m.recipe ? diets.filter((d) => m.servings.some((s) => s.profileId === d.id && s.servings > 0)).flatMap((d) => { const v = recipeViolations(m.recipe!.ingredients, d.prefs); return v.length ? [`${d.name}: ${v[0].reason.toLowerCase()} (${v[0].ingredient})`] : []; }) : [];
   const targets = Object.fromEntries(await Promise.all(profiles.map(async (p) => [p.id, (await currentTargets(p.id, weekStart))?.kcal ?? null] as const)));
   const reqs = await computeRequirements(weekStart < today() ? today() : weekStart, addDays(weekStart, 6));
   let est = 0; let unpriced = 0;
@@ -106,7 +109,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
                         {list.map((m) => (
                           <MealCard key={m.id} meal={{
                             id: m.id, title: m.title, slot: m.slot, date: m.date, status: m.status, recipeId: m.recipeId, isLeftover: m.isLeftover, cookTime: m.cookTime, prepNote: m.prepNote,
-                            kcalPerServing: m.nutrition?.complete ? m.nutrition.perServing.kcal : null, verified: Boolean(m.nutrition?.verified),
+                            kcalPerServing: m.nutrition?.complete ? m.nutrition.perServing.kcal : null, verified: Boolean(m.nutrition?.verified), dietWarnings: dietWarnings(m),
                             servings: m.servings.map((s) => ({ profileId: s.profileId, name: s.profile.name, color: s.profile.color, servings: s.servings, targetKcal: targets[s.profileId] })),
                           }} />
                         ))}

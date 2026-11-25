@@ -30,6 +30,7 @@ export const recipeInput = z.object({
   notes: z.string().max(10000).default(""),
   tags: z.string().max(300).default(""),
   favourite: z.boolean().default(false),
+  variantOfId: z.string().uuid().nullable().optional(),
   ingredients: z.array(recipeIngredientInput).max(100),
 });
 export type RecipeInput = z.infer<typeof recipeInput>;
@@ -66,13 +67,14 @@ export async function getRecipe(id: string) {
   return { ...recipe, nutrition: computeRecipeNutrition(recipe) };
 }
 
-export async function listRecipes(filter: { q?: string; tag?: string; favourite?: boolean; category?: string } = {}) {
+export async function listRecipes(filter: { q?: string; tag?: string; favourite?: boolean; category?: string; collectionId?: string } = {}) {
   const recipes = await prisma.recipe.findMany({
     where: {
       ...(filter.q ? { OR: [{ name: { contains: filter.q } }, { cuisine: { contains: filter.q } }, { tags: { contains: filter.q.toLowerCase() } }, { ingredients: { some: { name: { contains: filter.q } } } }] } : {}),
       ...(filter.tag ? { tags: { contains: filter.tag } } : {}),
       ...(filter.favourite ? { favourite: true } : {}),
       ...(filter.category ? { category: filter.category } : {}),
+      ...(filter.collectionId ? { collections: { some: { collectionId: filter.collectionId } } } : {}),
     },
     include: recipeInclude,
     orderBy: [{ favourite: "desc" }, { updatedAt: "desc" }],

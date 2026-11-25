@@ -1,13 +1,22 @@
 import Link from "next/link";
 import { Plus, Star, Clock, BookOpen, Download } from "lucide-react";
 import { listRecipes } from "@/lib/food/recipes";
+import { prisma } from "@/lib/db";
+import { dietBadges, DIET_LABELS } from "@/lib/food/diet";
+import { InlineAction } from "@/components/forms";
+import { renameCollectionAction, deleteCollectionAction } from "../actions";
+import { cn } from "@/lib/utils";
 import { Card, Badge, Input, LinkButton, Empty, Select } from "@/components/ui";
 
 export const metadata = { title: "Recipes" };
 
-export default async function RecipesPage({ searchParams }: { searchParams: Promise<{ q?: string; fav?: string; category?: string }> }) {
+export default async function RecipesPage({ searchParams }: { searchParams: Promise<{ q?: string; fav?: string; category?: string; c?: string }> }) {
   const sp = await searchParams;
-  const recipes = await listRecipes({ q: sp.q, favourite: sp.fav === "1", category: sp.category || undefined });
+  const [recipes, collections] = await Promise.all([
+    listRecipes({ q: sp.q, favourite: sp.fav === "1", category: sp.category || undefined, collectionId: sp.c || undefined }),
+    prisma.recipeCollection.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { items: true } } } }),
+  ]);
+  const active = collections.find((c) => c.id === sp.c);
   return (
     <>
       <div className="mb-5 flex flex-wrap items-center gap-2">
@@ -20,6 +29,18 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
         <LinkButton href="/food/import" variant="secondary"><Download className="h-4 w-4" />Import</LinkButton>
         <LinkButton href="/food/recipes/new" variant="primary"><Plus className="h-4 w-4" />New recipe</LinkButton>
       </div>
+      {collections.length ? (
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          <Link href="/food/recipes" className={cn("rounded-full border px-3 py-1.5 text-sm", !sp.c ? "border-accent/60 bg-accent-dim text-accent" : "border-line-strong text-muted hover:text-ink")}>All recipes</Link>
+          {collections.map((c) => <Link key={c.id} href={`/food/recipes?c=${c.id}`} className={cn("rounded-full border px-3 py-1.5 text-sm", sp.c === c.id ? "border-accent/60 bg-accent-dim text-accent" : "border-line-strong text-muted hover:text-ink")}>{c.name} <span className="text-faint">{c._count.items}</span></Link>)}
+          {active ? (
+            <span className="ml-auto flex items-center gap-2">
+              <form action={renameCollectionAction} className="flex items-center gap-1.5"><input type="hidden" name="id" value={active.id} /><input name="name" defaultValue={active.name} aria-label="Collection name" className="h-9 w-40 rounded-lg border border-line-strong bg-surface-2 px-2 text-sm" /><button className="h-9 rounded-lg border border-line-strong px-2.5 text-xs">Rename</button></form>
+              <InlineAction action={deleteCollectionAction} fields={{ id: active.id }} variant="ghost" confirm="Delete this collection? Recipes stay in your library.">Delete</InlineAction>
+            </span>
+          ) : null}
+        </div>
+      ) : <p className="mb-4 text-xs text-faint">Tip: group recipes into collections (“Weeknight”, “Desserts”) from any recipe&apos;s Collections button.</p>}
       {recipes.length ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {recipes.map((r) => (
@@ -39,6 +60,8 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {r.nutrition.complete ? <Badge tone={r.nutrition.verified ? "accent" : "neutral"}>{r.nutrition.perServing.kcal} kcal/serving{r.nutrition.verified ? "" : " est."}</Badge> : <Badge>nutrition incomplete</Badge>}
                     {r.sourceType === "AI" ? <Badge tone="warn">AI</Badge> : null}
+                    {r.variantOfId ? <Badge tone="info">adapted</Badge> : null}
+                    {dietBadges(r.ingredients).slice(0, 2).map((b) => <Badge key={b} tone="accent">{DIET_LABELS[b]}</Badge>)}
                     {r.tags.split(",").filter(Boolean).slice(0, 3).map((t) => <Badge key={t}>#{t}</Badge>)}
                   </div>
                 </div>

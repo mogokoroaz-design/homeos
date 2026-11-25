@@ -11,6 +11,8 @@ import { Card, CardHeader, CardBody, Badge, LinkButton } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
 import { AddMealDialog } from "@/components/food/meal-dialogs";
 import { RecipeView } from "@/components/food/recipe-view";
+import { AdaptDialog, CollectionsDialog } from "@/components/food/adapt-dialog";
+import { dietBadges, DIET_LABELS } from "@/lib/food/diet";
 import { ImageUpload } from "@/components/food/image-upload";
 import { toggleFavouriteAction, deleteRecipeAction } from "../../actions";
 
@@ -21,11 +23,13 @@ export default async function RecipePage({ params, searchParams }: { params: Pro
   const recipe = await getRecipe(id);
   if (!recipe) notFound();
   const servings = Number(sp.servings) > 0 ? Number(sp.servings) : recipe.servings;
-  const [baseCheck, profiles, recipes, notes] = await Promise.all([
+  const [baseCheck, profiles, recipes, notes, collections, related] = await Promise.all([
     checkRecipeAgainstPantry(id),
     prisma.householdProfile.findMany({ select: { id: true, name: true } }),
     prisma.recipe.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     listNotes(viewer, { entityType: "recipe", entityId: id }),
+    prisma.recipeCollection.findMany({ orderBy: { name: "asc" }, include: { items: { where: { recipeId: id } } } }),
+    prisma.recipe.findMany({ where: { OR: [{ variantOfId: id }, ...(recipe.variantOfId ? [{ id: recipe.variantOfId }] : [])] }, select: { id: true, name: true, variantOfId: true } }),
   ]);
   const n = computeRecipeNutrition(recipe);
   return (
@@ -41,17 +45,27 @@ export default async function RecipePage({ params, searchParams }: { params: Pro
               {recipe.cookMinutes ? <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />cook {recipe.cookMinutes} min</span> : null}
               {recipe.temperature ? <span className="inline-flex items-center gap-1"><Thermometer className="h-3.5 w-3.5" />{recipe.temperature}</span> : null}
               {recipe.sourceUrl ? <a href={recipe.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-info hover:underline"><ExternalLink className="h-3.5 w-3.5" />source</a> : null}
-              {recipe.sourceType === "AI" ? <Badge tone="warn">AI-generated</Badge> : recipe.sourceType !== "MANUAL" ? <Badge>imported · {recipe.sourceType.toLowerCase()}</Badge> : null}
+              {recipe.sourceType === "AI" ? <Badge tone="warn">AI-generated</Badge> : recipe.sourceType === "VARIANT" ? <Badge tone="info">adapted</Badge> : recipe.sourceType !== "MANUAL" ? <Badge>imported · {recipe.sourceType.toLowerCase()}</Badge> : null}
+              {dietBadges(recipe.ingredients).map((b) => <Badge key={b} tone="accent">{DIET_LABELS[b]}</Badge>)}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <InlineAction action={toggleFavouriteAction} fields={{ id }} variant="ghost" size="iconSm" title="Favourite"><Star className={recipe.favourite ? "h-4 w-4 fill-warn text-warn" : "h-4 w-4"} /></InlineAction>
             <AddMealDialog recipes={recipes} profiles={profiles} date={today()} recipeId={id} label="Plan" size="sm" />
+            <AdaptDialog recipeId={id} />
+            <CollectionsDialog recipeId={id} collections={collections.map((c) => ({ id: c.id, name: c.name, has: c.items.length > 0 }))} />
             <LinkButton href={`/food/recipes/${id}/edit`} size="sm"><Pencil className="h-4 w-4" />Edit</LinkButton>
             <InlineAction action={deleteRecipeAction} fields={{ id }} variant="danger" size="iconSm" confirm="Delete this recipe? Planned meals keep their name." title="Delete"><Trash2 className="h-4 w-4" /></InlineAction>
           </div>
         </div>
 
+        {related.length ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
+            {related.filter((r) => r.id === recipe.variantOfId).map((r) => <span key={r.id}>Adapted from <Link href={`/food/recipes/${r.id}`} className="text-info hover:underline">{r.name}</Link></span>)}
+            {related.some((r) => r.variantOfId === id) ? <span>Versions: {related.filter((r) => r.variantOfId === id).map((r, k) => <span key={r.id}>{k ? ", " : ""}<Link href={`/food/recipes/${r.id}`} className="text-info hover:underline">{r.name}</Link></span>)}</span> : null}
+          </div>
+        ) : null}
+        <p className="-mt-2 text-[11px] text-faint">Diet labels are a guide based on ingredient names — check product labels for allergies.</p>
         <div className="flex flex-wrap items-center gap-3">
           {recipe.images.map((img) => <img key={img.id} src={`/api/files/${img.fileId}`} alt="" className="h-40 w-56 rounded-xl border border-line object-cover" />)}
           <ImageUpload endpoint={`/api/recipes/${id}/images`} />

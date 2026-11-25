@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 export interface MealCardData {
   id: string; title: string; slot: string; date: string; status: string; recipeId: string | null; isLeftover: boolean; cookTime: string | null; prepNote: string;
-  kcalPerServing: number | null; verified: boolean;
+  kcalPerServing: number | null; verified: boolean; dietWarnings?: string[];
   servings: { profileId: string; name: string; color: string; servings: number; targetKcal: number | null }[];
 }
 
@@ -36,6 +36,7 @@ export function MealCard({ meal }: { meal: MealCardData }) {
         <button type="button" onClick={() => setMenu(!menu)} className="rounded-md p-1 text-faint hover:bg-surface-3 hover:text-ink" aria-label="Meal options"><MoreHorizontal className="h-4 w-4" /></button>
       </div>
       {meal.prepNote ? <p className="mt-1 text-xs text-warn">Prep: {meal.prepNote}</p> : null}
+      {meal.dietWarnings?.length ? <p className="mt-1 text-xs text-warn" title="Based on each person's diet preferences (People → Profile)">⚠ {meal.dietWarnings.join("; ")}</p> : null}
       <div className="mt-2 space-y-1">
         {meal.servings.map((s) => (
           <form key={s.profileId} action={setServingAction} className="flex items-center gap-1.5">

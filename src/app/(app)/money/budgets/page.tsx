@@ -4,6 +4,7 @@ import { today, monthOf, addMonthsToMonth, formatMonth } from "@/lib/dates";
 import { formatCents, centsToInput } from "@/lib/money";
 import { Card, Progress, LinkButton } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
+import { AutoSubmitInput } from "@/components/auto-submit";
 import { setBudgetAction, copyBudgetsAction, updateCategoryAction } from "../actions";
 
 export const metadata = { title: "Budgets" };
@@ -29,7 +30,7 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
               <form action={updateCategoryAction} className="flex items-center gap-2">
                 <input type="hidden" name="id" value={r.id} />
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: r.color }} />
-                <input name="name" defaultValue={r.name} aria-label="Category name" onBlur={(e) => { if (e.target.value !== r.name) e.currentTarget.form?.requestSubmit(); }} className="w-full bg-transparent text-sm outline-none focus:underline" />
+                <AutoSubmitInput name="name" defaultValue={r.name} aria-label="Category name" className="w-full bg-transparent text-sm outline-none focus:underline" />
               </form>
               <div className="hidden sm:block">{r.budget ? <Progress value={r.spent} max={r.budget} tone={r.spent > r.budget ? "danger" : r.spent > r.budget * 0.85 ? "warn" : "accent"} /> : null}</div>
               <span className="text-right text-sm tabular">{formatCents(r.spent, viewer.currency)}</span>

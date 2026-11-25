@@ -7,6 +7,17 @@ import { Field, Input, Select, Textarea, Button } from "../ui";
 import { ActionCard } from "../assistant/action-card";
 import { updateProfileAction, setTargetsAction, proposeTargetsAction, addMetricAction, addWorkoutAction, createHabitAction, createRoutineAction } from "@/app/(app)/people/actions";
 import { today } from "@/lib/dates";
+import { parseDietPrefs, describeDiet } from "@/lib/food/diet";
+
+function DietField({ defaultValue }: { defaultValue: string }) {
+  const [v, setV] = useState(defaultValue);
+  const understood = describeDiet(parseDietPrefs(v));
+  return (
+    <Field label="Diet & allergies" className="col-span-2" hint={understood.length ? <>Meal plans will follow: <span className="text-accent">{understood.join(" · ")}</span></> : "e.g. vegetarian, gluten free, no shellfish, allergic to peanuts, avoid mushrooms"}>
+      <Input name="dietPreferences" value={v} onChange={(e) => setV(e.target.value)} placeholder="vegetarian, no shellfish…" />
+    </Field>
+  );
+}
 
 export function ProfileForm({ p }: { p: { birthDate: string | null; sex: string | null; heightCm: number | null; goalWeightKg: number | null; activityLevel: string; goal: string; dietPreferences: string; fitnessGoals: string } }) {
   return (
@@ -17,7 +28,7 @@ export function ProfileForm({ p }: { p: { birthDate: string | null; sex: string 
       <Field label="Goal weight (kg)"><Input name="goalWeightKg" inputMode="decimal" defaultValue={p.goalWeightKg ?? ""} /></Field>
       <Field label="Activity level"><Select name="activityLevel" defaultValue={p.activityLevel}><option value="sedentary">Sedentary</option><option value="light">Lightly active</option><option value="moderate">Moderately active</option><option value="active">Very active</option><option value="very_active">Extremely active</option></Select></Field>
       <Field label="Goal"><Select name="goal" defaultValue={p.goal}><option value="lose">Lose weight</option><option value="maintain">Maintain</option><option value="gain">Gain weight</option></Select></Field>
-      <Field label="Nutrition preferences" className="col-span-2"><Input name="dietPreferences" defaultValue={p.dietPreferences} placeholder="vegetarian, no shellfish…" /></Field>
+      <DietField defaultValue={p.dietPreferences} />
       <Field label="Fitness goals" className="col-span-full"><Textarea name="fitnessGoals" defaultValue={p.fitnessGoals} className="min-h-16" /></Field>
       <div className="col-span-full flex justify-end"><SubmitButton>Save profile</SubmitButton></div>
     </ActionForm>

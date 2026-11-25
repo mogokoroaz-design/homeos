@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { HeartPulse, Upload, Loader2, KeyRound, Copy, Check } from "lucide-react";
 import { Button, Input, Field, Badge, buttonClass } from "../ui";
@@ -26,6 +26,10 @@ export function HealthCard({ lastImport, lastSync, lastSyncData, hasKey }: { las
   const [copied, setCopied] = useState(false);
   const [pending, start] = useTransition();
   const router = useRouter();
+  // Local times depend on the device's clock/time zone, so render them only in the browser (avoids hydration mismatch).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const when = (iso: string) => (mounted ? new Date(iso).toLocaleString() : "");
 
   const upload = (file: File) => {
     setError(null); setResult(null); setPhase("upload"); setProgress(0);
@@ -41,7 +45,7 @@ export function HealthCard({ lastImport, lastSync, lastSyncData, hasKey }: { las
     xhr.send(file);
   };
   const shown = result ?? lastImport;
-  const syncUrl = typeof window !== "undefined" ? `${window.location.origin}/api/health/sync` : "/api/health/sync";
+  const syncUrl = mounted ? `${window.location.origin}/api/health/sync` : "/api/health/sync";
 
   return (
     <div className="space-y-5">
@@ -63,14 +67,14 @@ export function HealthCard({ lastImport, lastSync, lastSyncData, hasKey }: { las
         {error ? <p className="text-sm text-danger">{error}</p> : null}
         {shown ? (
           <div className="rounded-xl bg-surface-2 px-4 py-3 text-sm">
-            <p className="font-medium text-accent">{result || (shown.at && Date.now() - new Date(shown.at).getTime() < 5 * 60_000) ? "Imported" : "Last import"}{shown.at ? ` · ${new Date(shown.at).toLocaleString()}` : ""}</p>
+            <p className="font-medium text-accent">{result || (mounted && shown.at && Date.now() - new Date(shown.at).getTime() < 5 * 60_000) ? "Imported" : "Last import"}{shown.at && mounted ? ` · ${when(shown.at)}` : ""}</p>
             <p className="mt-1 text-muted">{shown.firstDate && shown.lastDate ? `${shown.firstDate} → ${shown.lastDate} · ` : ""}{Object.entries(shown.byType).map(([k, v]) => describe(k, v)).join(" · ")}{shown.workouts ? ` · ${shown.workouts} workout${shown.workouts === 1 ? "" : "s"}` : ""}</p>
           </div>
         ) : null}
       </div>
 
       <div className="space-y-3 border-t border-line pt-4">
-        <p className="flex items-center gap-2 text-sm font-medium">2 · Keep it in sync automatically {lastSync ? <Badge tone="accent">last sync {new Date(lastSync).toLocaleString()}</Badge> : null}</p>
+        <p className="flex items-center gap-2 text-sm font-medium">2 · Keep it in sync automatically {lastSync && mounted ? <Badge tone="accent">last sync {when(lastSync)}</Badge> : null}</p>
         <p className="text-sm text-muted">A free iPhone Shortcut sends each day&apos;s totals to HomeOS every night. It uses your personal sync key, which can only add data to <b className="text-ink">your</b> profile.</p>
         {lastSyncData.length ? <p className="text-xs text-muted">Last received: {lastSyncData.map((m) => `${SHORT[m.type] ?? m.type} ${m.value}`).join(" · ")} ({lastSyncData[0].date}). Compare with the Health app the first time.</p> : null}
         {key ? (

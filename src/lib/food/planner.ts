@@ -8,6 +8,7 @@ import { estimatePrice } from "./grocery";
 import { wordToNumber } from "./parse";
 import { SLOTS } from "../validation";
 import { normalizeName } from "../utils";
+import { parseDietPrefs, recipeViolations, describeDiet } from "./diet";
 
 export interface PlanRequest {
   startDate: string;
@@ -18,6 +19,8 @@ export interface PlanRequest {
   exclude: string[];
   preferPantry: boolean;
   servings: number | null; // household servings per meal; null = recipe default
+  diet?: string; // diet words in the request itself, e.g. "vegetarian dinners"
+  ignoreDiets?: boolean; // "ignore diets" — skip household members' preferences
 }
 
 export function parsePlanRequest(text: string, ref = today()): PlanRequest {
@@ -36,7 +39,7 @@ export function parsePlanRequest(text: string, ref = today()): PlanRequest {
   const exclude = [...t.matchAll(/\b(?:no|without|exclude|avoid)\s+([a-z]+)(?!\s+more than)/g)].map((m) => m[1]).filter((w) => !["repeating", "more", "going", "grocery", "shopping"].includes(w));
   const start = /tomorrow/.test(t) ? addDays(ref, 1) : /next week/.test(t) ? addDays(ref, ((8 - weekday(ref)) % 7) || 7) : ref;
   const serv = t.match(/(?:for|serves?)\s+(\d+)\s+(?:people|persons|servings)/);
-  return { startDate: start, days, slots: slots.length ? slots : ["DINNER"], budgetCents: budget ? Math.round(Number(budget[1]) * 100) : null, maxRepeats, exclude, preferPantry: /pantry|what we have|already (?:own|have)|existing|in stock|use up/.test(t), servings: serv ? Number(serv[1]) : null };
+  return { startDate: start, days, slots: slots.length ? slots : ["DINNER"], budgetCents: budget ? Math.round(Number(budget[1]) * 100) : null, maxRepeats, exclude, preferPantry: /pantry|what we have|already (?:own|have)|existing|in stock|use up/.test(t), servings: serv ? Number(serv[1]) : null, diet: text, ignoreDiets: /ignore (our |the )?diets?|any diet/.test(t) };
 }
 
 export interface ProposedMeal {
@@ -67,6 +70,10 @@ export async function proposeMealPlan(req: PlanRequest): Promise<PlanProposal> {
   const warnings: string[] = [];
   const slotCats: Record<string, string[]> = { BREAKFAST: ["breakfast"], LUNCH: ["main", "salad", "soup", "side"], DINNER: ["main", "soup"], SNACK: ["snack", "dessert"] };
   const all = await prisma.recipe.findMany({ include: { ingredients: { include: { foodItem: true } } } });
+  // Diets: each member's saved preferences (shared meals must suit everyone) + diet words in the request.
+  const members = req.ignoreDiets ? [] : await prisma.householdProfile.findMany({ select: { name: true, dietPreferences: true } });
+  const dietSets = [...members.map((m) => ({ who: m.name, prefs: parseDietPrefs(m.dietPreferences) })), ...(req.diet ? [{ who: "this request", prefs: { rules: parseDietPrefs(req.diet).rules, avoid: [] as string[] } }] : [])].filter((d) => d.prefs.rules.length || d.prefs.avoid.length);
+  const skippedForDiet: string[] = [];
   if (!all.length) return { request: req, meals: [], totalKnownCostCents: 0, unpriced: [], warnings: ["Your recipe library is empty. Add or import recipes first — HomeOS only plans with recipes you have saved."], occupied: [] };
   const stock = await pantryByFood();
   const existing = await prisma.mealPlanItem.findMany({ where: { date: { gte: req.startDate, lte: addDays(req.startDate, req.days - 1) } } });
@@ -77,6 +84,8 @@ export async function proposeMealPlan(req: PlanRequest): Promise<PlanProposal> {
   for (const r of all) {
     const terms = recipeTerms(r);
     if (req.exclude.some((x) => terms.includes(x))) continue;
+    const clash = dietSets.map((d) => ({ who: d.who, v: recipeViolations(r.ingredients, d.prefs) })).find((x) => x.v.length);
+    if (clash) { skippedForDiet.push(`${r.name} (${clash.who}: ${clash.v[0].reason.toLowerCase()} — ${clash.v[0].ingredient})`); continue; }
     const check = await checkRecipeAgainstPantry(r.id, req.servings ?? r.servings, stock);
     let cost = 0;
     const unpriced: string[] = [];
@@ -114,6 +123,8 @@ export async function proposeMealPlan(req: PlanRequest): Promise<PlanProposal> {
       meals.push({ date, slot, recipeId: pick.s.r.id, title: pick.s.r.name, coverage: pick.s.coverage, missing: pick.s.missing, estCostCents: pick.s.cost, unpricedItems: pick.s.unpriced });
     }
   }
+  if (dietSets.length) warnings.unshift(`Following diets: ${dietSets.map((d) => `${d.who === "this request" ? "requested" : d.who} — ${describeDiet(d.prefs).join(", ")}`).join("; ")}.`);
+  if (skippedForDiet.length) warnings.push(`Skipped ${skippedForDiet.length} recipe(s) that don't fit: ${skippedForDiet.slice(0, 5).join("; ")}${skippedForDiet.length > 5 ? "…" : ""}. Say “ignore diets” to include them, or adapt them (recipe → Adapt).`);
   if (new Set(meals.map((m) => m.recipeId)).size < meals.length) warnings.push(`Your library has ${all.length} recipe(s), so some meals repeat. Add more recipes for more variety.`);
   const unpriced = [...new Set(meals.flatMap((m) => m.unpricedItems))];
   if (unpriced.length) warnings.push(`No recorded price for: ${unpriced.slice(0, 8).join(", ")}${unpriced.length > 8 ? "…" : ""}. The cost estimate excludes them.`);

@@ -272,3 +272,89 @@ export async function reextractImportAction(fd: FormData) {
   await requireViewer();
   await runVoid(() => reextractImport(String(fd.get("id"))));
 }
+
+// ── Recipe variants (adapt) ──
+export async function adaptRecipeAction(recipeId: string, instruction: string) {
+  await requireViewer();
+  const { adaptRecipe } = await import("@/lib/food/variants");
+  const { getLocalModel, extractJson } = await import("@/lib/ai/provider");
+  return run(async () => {
+    if (!instruction.trim()) throw new Error("Say how to adapt it, e.g. “make it dairy-free” or “swap butter for olive oil”.");
+    const r = await prisma.recipe.findUniqueOrThrow({ where: { id: recipeId }, include: { ingredients: { orderBy: { sortOrder: "asc" } } } });
+    const base = { name: r.name, instructions: r.instructions, notes: r.notes, tags: r.tags.split(",").filter(Boolean).join(", "), ingredients: r.ingredients.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit, note: i.note, optional: i.optional })) };
+    const result = adaptRecipe(base, instruction);
+    let engine = "rules";
+    if (result.unresolved.length) {
+      const model = await getLocalModel();
+      if (model) {
+        try {
+          const out = await model.complete({
+            system: "You adapt recipes. Apply the instruction to the recipe JSON and return the COMPLETE updated JSON with the same keys: {name, instructions (string, one step per line), notes, tags, ingredients:[{name, quantity (number|null), unit, note, optional}]}. Keep everything else unchanged. Do not add nutrition.",
+            prompt: `Recipe: ${JSON.stringify(result.draft)}\nInstruction: ${result.unresolved.join("; ")}`, json: true, maxTokens: 1500, timeoutMs: 60_000,
+          });
+          const j = extractJson(out) as typeof result.draft;
+          if (Array.isArray(j.ingredients) && j.ingredients.length) {
+            result.draft = { ...result.draft, ...j, ingredients: j.ingredients.map((i) => ({ name: String(i.name ?? "").slice(0, 160), quantity: Number(i.quantity) > 0 ? Number(i.quantity) : null, unit: String(i.unit ?? ""), note: String(i.note ?? ""), optional: Boolean(i.optional) })).filter((i) => i.name) };
+            result.changes.push(`Local AI: ${result.unresolved.join("; ")}`);
+            result.unresolved = [];
+            engine = model.label;
+          }
+        } catch { /* keep rule-based result */ }
+      }
+    }
+    const draft = {
+      name: result.draft.name, cuisine: r.cuisine, category: r.category, servings: r.servings, prepMinutes: r.prepMinutes, cookMinutes: r.cookMinutes, temperature: r.temperature,
+      instructions: result.draft.instructions, sourceType: "VARIANT", sourceUrl: r.sourceUrl, notes: result.draft.notes, tags: result.draft.tags, favourite: false, variantOfId: r.id,
+      ingredients: result.draft.ingredients,
+    };
+    return { draft, changes: result.changes, unresolved: result.unresolved, tips: result.tips, engine };
+  });
+}
+
+// ── Collections ──
+export async function createCollectionAction(name: string, recipeId?: string): Promise<ActionResult<{ id: string }>> {
+  await requireViewer();
+  return run(async () => {
+    const n = z.string().trim().min(1, "Name the collection").max(60).parse(name);
+    const c = await prisma.recipeCollection.upsert({ where: { name: n }, create: { name: n }, update: {} });
+    if (recipeId) await prisma.recipeCollectionItem.upsert({ where: { collectionId_recipeId: { collectionId: c.id, recipeId } }, create: { collectionId: c.id, recipeId }, update: {} });
+    return { id: c.id };
+  });
+}
+export async function toggleCollectionAction(collectionId: string, recipeId: string): Promise<ActionResult> {
+  await requireViewer();
+  return run(async () => {
+    const key = { collectionId_recipeId: { collectionId, recipeId } };
+    if (await prisma.recipeCollectionItem.findUnique({ where: key })) await prisma.recipeCollectionItem.delete({ where: key });
+    else await prisma.recipeCollectionItem.create({ data: { collectionId, recipeId } });
+  });
+}
+export async function deleteCollectionAction(fd: FormData) {
+  await requireViewer();
+  await runVoid(() => prisma.recipeCollection.delete({ where: { id: String(fd.get("id")) } }));
+  redirect("/food/recipes");
+}
+export async function renameCollectionAction(fd: FormData) {
+  await requireViewer();
+  await runVoid(() => prisma.recipeCollection.update({ where: { id: String(fd.get("id")) }, data: { name: z.string().trim().min(1).max(60).parse(fd.get("name")) } }));
+}
+
+// ── Store sections ──
+export async function moveSectionAction(fd: FormData) {
+  await requireViewer();
+  const { orderedSections } = await import("@/lib/food/sections");
+  const { getSetting, setSetting } = await import("@/lib/settings");
+  await runVoid(async () => {
+    const keys = orderedSections(await getSetting("grocery.sectionOrder", "[]")).map((s) => s.key as string);
+    const i = keys.indexOf(String(fd.get("key")));
+    const j = i + (fd.get("dir") === "up" ? -1 : 1);
+    if (i < 0 || j < 0 || j >= keys.length) return;
+    [keys[i], keys[j]] = [keys[j], keys[i]];
+    await setSetting("grocery.sectionOrder", JSON.stringify(keys));
+  });
+}
+export async function setItemSectionAction(fd: FormData) {
+  await requireViewer();
+  const { categoryForSection } = await import("@/lib/food/sections");
+  await runVoid(() => prisma.foodItem.update({ where: { id: String(fd.get("foodItemId")) }, data: { category: categoryForSection(String(fd.get("section"))) } }));
+}
