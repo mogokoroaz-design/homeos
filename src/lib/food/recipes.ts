@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { loadFoodIndex, ensureFoodItem } from "./catalog";
 import { computeRecipeNutrition } from "./nutrition";
 import { normalizeUnit, convert, formatQuantity } from "../units";
+import { decodeEntities } from "./parse";
 import { availabilityFrom, pantryByFood } from "./pantry";
 import { audit } from "../audit";
 import type { Viewer } from "../auth/session";
@@ -35,8 +36,14 @@ export const recipeInput = z.object({
 });
 export type RecipeInput = z.infer<typeof recipeInput>;
 
+/** Decodes stray HTML entities (&#x2022; etc.) and leading bullets left by older imports. */
+function clean(s: string) {
+  return decodeEntities(s).replace(/^\s*[•\u2022\u25E6*-]\s+/, "").trim();
+}
+
 export async function saveRecipe(input: RecipeInput, viewer: Pick<Viewer, "profileId">, id?: string) {
-  const data = recipeInput.parse(input);
+  const parsed = recipeInput.parse(input);
+  const data = { ...parsed, name: clean(parsed.name), instructions: decodeEntities(parsed.instructions), notes: decodeEntities(parsed.notes), ingredients: parsed.ingredients.map((i) => ({ ...i, name: clean(i.name), note: clean(i.note) })) };
   return prisma.$transaction(async (tx) => {
     const index = await loadFoodIndex(tx);
     const ingredients = [] as { foodItemId: string; name: string; quantity: number | null; unit: string; note: string; optional: boolean; sortOrder: number }[];
@@ -61,9 +68,16 @@ export const recipeInclude = {
   images: { include: { file: true } },
 };
 
+/** Older imports may have stored undecoded entities; show them cleanly (they're fixed for good on next save). */
+function tidy<T extends { name: string; instructions: string; notes: string; ingredients: { name: string; note: string }[] }>(r: T): T {
+  if (!/&#|[•\u2022]/.test(JSON.stringify([r.name, r.instructions, r.ingredients.map((i) => i.name + i.note)]))) return r;
+  return { ...r, name: clean(r.name), instructions: decodeEntities(r.instructions), notes: decodeEntities(r.notes), ingredients: r.ingredients.map((i) => ({ ...i, name: clean(i.name), note: clean(i.note) })) };
+}
+
 export async function getRecipe(id: string) {
-  const recipe = await prisma.recipe.findUnique({ where: { id }, include: recipeInclude });
-  if (!recipe) return null;
+  const raw = await prisma.recipe.findUnique({ where: { id }, include: recipeInclude });
+  if (!raw) return null;
+  const recipe = tidy(raw);
   return { ...recipe, nutrition: computeRecipeNutrition(recipe) };
 }
 
@@ -79,7 +93,7 @@ export async function listRecipes(filter: { q?: string; tag?: string; favourite?
     include: recipeInclude,
     orderBy: [{ favourite: "desc" }, { updatedAt: "desc" }],
   });
-  return recipes.map((r) => ({ ...r, nutrition: computeRecipeNutrition(r) }));
+  return recipes.map(tidy).map((r) => ({ ...r, nutrition: computeRecipeNutrition(r) }));
 }
 
 export type RecipeWithNutrition = NonNullable<Awaited<ReturnType<typeof getRecipe>>>;

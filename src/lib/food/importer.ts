@@ -173,7 +173,9 @@ export async function importFromUrl(url: string, viewer: Pick<Viewer, "profileId
   if (!caption || caption.length < 40) {
     return finish(platform, viewer, caption, null, [`${platform === "INSTAGRAM" ? "Instagram" : platform === "YOUTUBE" ? "YouTube" : "This platform"} didn't expose the recipe text to HomeOS (it often requires login or blocks automated access).`, ...manualHint(platform)], { sourceUrl: url, error: "Caption not accessible" });
   }
-  const parsed = parseRecipeText(`${title}\n${caption}`, title || "Imported recipe");
+  // Instagram's og:title repeats the caption ("Name on Instagram: \"…\"") — only use a title that adds something.
+  const cleanTitle = /on Instagram|on TikTok|^Instagram$/i.test(title) || caption.includes(title.slice(0, 40)) ? "" : title;
+  const parsed = parseRecipeText(cleanTitle ? `${cleanTitle}\n${caption}` : caption, cleanTitle || "Imported recipe");
   warnings.push("Extracted from the post caption/description. Video audio is not transcribed — if quantities are only spoken in the video, paste a transcript.");
   return finish(platform, viewer, caption, fromParsed(parsed, platform, url), [...warnings, ...parsed.warnings], { sourceUrl: url });
 }

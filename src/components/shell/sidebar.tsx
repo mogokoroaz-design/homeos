@@ -31,7 +31,7 @@ export function Sidebar({ householdName }: { householdName: string }) {
           </Link>
         ))}
       </nav>
-      <p className="hidden px-5 pb-4 text-[11px] text-faint xl:block">Local-first · data stays on this Mac</p>
+      <p className="hidden px-5 pb-4 text-[11px] text-faint xl:block">Local-first · data stays on this Mac<br />Version {process.env.NEXT_PUBLIC_HOMEOS_VERSION}</p>
     </aside>
   );
 }

@@ -10,7 +10,7 @@ export interface ParsedIngredient {
   raw: string;
 }
 
-const SIZE_WORDS = /\b(large|medium|small|extra large|big|fresh|ripe|boneless|skinless|chopped|diced|minced|sliced|grated|finely|roughly|thinly|peeled|crushed|softened|melted|cooked|uncooked|frozen|thawed|organic|whole|to taste|optional|divided)\b/gi;
+const SIZE_WORDS = /\b(large|medium|small|extra large|big|fresh|ripe|boneless|skinless|chopped|diced|minced|sliced|grated|finely|roughly|thinly|peeled|crushed|softened|melted|cooked|uncooked|frozen|thawed|organic|whole(?!\s+(?:wheat|grain|meal|milk|foods?|spelt|rye))|to taste|optional|divided)\b/gi;
 const NUM = String.raw`(?:\d+\s*[¼½¾⅓⅔⅛]|\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?|[¼½¾⅓⅔⅛⅕])`;
 const NUMBER_WORDS: Record<string, number> = {
   "half a": 0.5, "half an": 0.5, a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
@@ -24,6 +24,7 @@ export function wordToNumber(w: string): number | null {
 }
 
 export function parseIngredientLine(rawLine: string): ParsedIngredient {
+  rawLine = rawLine.replace(/^\s*[-•*▢☐□●◦·\u2022\u2023\u25E6\u2043]+\s*/, "");
   const trailing = rawLine.trim().match(/^([\p{L}][\p{L} '&-]{1,50}?)\s*[:\-–]?\s+(\d+(?:[.,]\d+)?|\d+\/\d+|[¼½¾])\s*(kg|g|mg|ml|l|lb|lbs|oz|tsp|tbsp|cups?|cloves?|pcs?)?\.?\s*(\(.*\))?$/iu);
   if (trailing && !/^\d/.test(rawLine.trim())) {
     return parseIngredientLine(`${trailing[2]}${trailing[3] ? ` ${trailing[3]}` : ""} ${trailing[1]}${trailing[4] ? ` ${trailing[4]}` : ""}`);
@@ -193,7 +194,11 @@ export function parseRecipeText(text: string, fallbackName = "Imported recipe"):
   const steps: string[] = [];
   const notes: string[] = [];
   const head: string[] = [];
+  const seen = new Set<string>();
   const pushIng = (l: string) => {
+    const key = l.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (seen.has(key)) return; // captions sometimes repeat the list
+    seen.add(key);
     const p = parseIngredientLine(l);
     ingredients.push(group ? { ...p, note: [p.note, `for ${group}`].filter(Boolean).join("; ") } : p);
   };

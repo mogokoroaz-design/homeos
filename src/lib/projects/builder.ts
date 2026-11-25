@@ -23,6 +23,7 @@ interface Template {
   integration?: ProjectDef["integrations"][number];
   reminder?: { time: string; weekdays: string };
   note?: string;
+  extras?: string[]; // fields to add when this topic is only mentioned as context ("…to regulate emotions")
 }
 
 // Order matters: more specific templates first.
@@ -33,7 +34,7 @@ const TEMPLATES: Template[] = [
   { id: "thought", re: /\bcbt\b|thought record|negative thoughts?|therapy|cognitive/i, name: "Thought record", icon: "brain", fields: [
     long("Situation", true), long("Automatic thought"), rating("Emotion intensity", 10), long("Evidence for"), long("Evidence against"), long("Balanced thought"), rating("Intensity after", 10),
   ] },
-  { id: "emotion", re: /emotional regulation|emotions? journal/i, name: "Emotional regulation journal", icon: "heart", fields: [
+  { id: "emotion", re: /emotional regulation|regulat\w* (my |our )?emotions?|manag\w* (my )?emotions?|emotions? journal/i, name: "Emotional regulation journal", icon: "heart", extras: ["Emotion", "Intensity", "What helped"], fields: [
     long("Situation", true), choice("Emotion", ["Anger", "Anxiety", "Sadness", "Frustration", "Overwhelm", "Joy", "Calm"], true), rating("Intensity", 10), long("How I responded"), long("What helped"),
   ] },
   { id: "gratitude", re: /gratitude|grateful|thankful/i, name: "Gratitude journal", icon: "heart", fields: [
@@ -250,7 +251,11 @@ export function findTemplate(description: string) {
 
 export function buildProjectProposal(description: string): { proposal: ProjectDef; notes: string[] } {
   const notes: string[] = [];
-  const list = listPhrases(description);
+  // The sentence holding the list defines the fields; other sentences are context ("…to regulate emotions").
+  const sentences = description.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+  const listSentence = sentences.find((x) => listPhrases(x).length >= 2) ?? description;
+  const context = sentences.filter((x) => x !== listSentence).join(" ");
+  const list = listPhrases(listSentence);
   // Choose the template from what is being made ("a daily journal where…"), not from words inside the list.
   const head = list.length ? description.slice(0, Math.max(0, description.toLowerCase().indexOf(list[0].toLowerCase()))) : description;
   const template = findTemplate(head) ?? (list.length >= 3 ? undefined : findTemplate(description));
@@ -275,6 +280,17 @@ export function buildProjectProposal(description: string): { proposal: ProjectDe
     notes.push("I couldn't tell what to track, so this is a simple starting point. Use Refine below, e.g. “add minutes, a photo and a rating out of 10”.");
   }
   if (template?.note) notes.push(template.note);
+  // Topics mentioned as context add their key fields.
+  const extraTemplate = context ? TEMPLATES.find((t) => t.re.test(context) && t !== template) : undefined;
+  if (extraTemplate) {
+    const have = new Set(fields.map((x) => x.label.toLowerCase()));
+    const pick = (extraTemplate.extras ?? extraTemplate.fields.filter((x) => x.type !== "LONG_TEXT").map((x) => x.label)).slice(0, 3);
+    const added = extraTemplate.fields.filter((x) => pick.includes(x.label) && !have.has(x.label.toLowerCase()));
+    if (added.length) {
+      fields = [...fields, ...added];
+      notes.push(`Added ${added.map((x) => `“${x.label}”`).join(", ")} because you mentioned ${extraTemplate.name.toLowerCase().replace(/ (journal|tracker|log)$/, "")}.`);
+    }
+  }
   const headWords = head.toLowerCase().replace(/[^a-z ]/g, " ").split(/\s+/).filter((w) => w && !STOP.has(w) && !/^(track|tracking|record|log|keep|project|where|can|that|which|with|for|and)$/.test(w));
   const name = list.length >= 3 && !headWords.length && !template ? titleCase(`${cleanLabel(list[0])} tracker`) : projectName(list.length >= 3 && head.trim() ? head : description, template);
   const daily = /\b(daily|every day|each day|nightly|every night|each evening|every morning)\b/i.test(description);

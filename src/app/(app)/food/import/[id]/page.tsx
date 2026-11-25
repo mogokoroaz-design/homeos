@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { reextractImport } from "@/lib/food/importer";
 import { RecipeEditor, EMPTY_RECIPE, type EditorRecipe } from "@/components/food/recipe-editor";
 import { Card, CardBody, Badge, LinkButton } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
@@ -7,8 +8,13 @@ import { discardImportAction, reextractImportAction } from "../../actions";
 
 export default async function ImportReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const imp = await prisma.recipeImport.findUnique({ where: { id } });
+  let imp = await prisma.recipeImport.findUnique({ where: { id } });
   if (!imp) notFound();
+  // Drafts made by an older parser (undecoded “&#x2022;” codes, amounts left in the name) are re-read automatically.
+  if (imp.status !== "SAVED" && imp.rawText.trim() && /&#x?[0-9a-f]+;?|[•\u2022]/i.test(imp.extracted)) {
+    await reextractImport(id).catch(() => undefined);
+    imp = (await prisma.recipeImport.findUnique({ where: { id } }))!;
+  }
   const draft = JSON.parse(imp.extracted || "{}") as Partial<EditorRecipe>;
   const warnings = JSON.parse(imp.warnings || "[]") as string[];
   const initial: EditorRecipe = { ...EMPTY_RECIPE, ...draft, category: draft.category ?? "main", favourite: false, sourceType: draft.sourceType ?? imp.method, sourceUrl: draft.sourceUrl ?? imp.sourceUrl, ingredients: draft.ingredients ?? [] };

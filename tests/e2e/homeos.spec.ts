@@ -276,3 +276,17 @@ test("shopping list is grouped by store section and sections can be reordered", 
   await page.getByRole("button", { name: `Move ${before} up` }).click(); // restore for the next run
   await expect.poll(first).toBe(before);
 });
+
+
+test("project builder: the exact screenshot description creates a working project", async ({ page }) => {
+  await unlock(page, "Alex", "1234");
+  await page.goto("/projects/new");
+  await page.getByPlaceholder(/daily journal/).fill("I want to create a daily journal where I can record my mood, what happened during the day, what I learned, what I am grateful for and how I felt. this should help me learn how to regulate emotions better.");
+  await page.getByRole("button", { name: "Propose structure" }).click();
+  await expect(page.getByText(/because you mentioned emotional regulation/)).toBeVisible();
+  await page.getByRole("button", { name: /Approve/ }).click();
+  await page.waitForURL(/\/projects\/[0-9a-f-]{36}$/);
+  await page.getByLabel("What helped").fill("A short walk");
+  await page.getByRole("button", { name: "Save entry" }).click();
+  await expect(page.getByText("A short walk").last()).toBeVisible();
+});

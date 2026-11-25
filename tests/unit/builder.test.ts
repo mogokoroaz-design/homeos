@@ -60,3 +60,12 @@ describe("refining a proposal in plain words", () => {
     expect(refineProposal(base, "call it evening check-in").proposal.name).toBe("Evening Check-in");
   });
 });
+
+describe("the exact description from the screenshot", () => {
+  it("builds the journal and adds emotion-regulation fields from the extra sentence", () => {
+    const { proposal, notes } = buildProjectProposal("I want to create a daily journal where I can record my mood, what happened during the day, what I learned, what I am grateful for and how I felt. this should help me learn how to regulate emotions better.");
+    expect(proposal.name).toBe("Daily Journal");
+    expect(proposal.fields.map((f) => f.label)).toEqual(["Mood", "What happened", "What I learned", "Grateful for", "How I felt", "Emotion", "Intensity", "What helped"]);
+    expect(notes.join(" ")).toMatch(/because you mentioned emotional regulation/);
+  });
+});

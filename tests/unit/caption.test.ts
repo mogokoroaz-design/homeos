@@ -71,3 +71,17 @@ describe("other caption styles", () => {
     expect(r.cookMinutes).toBe(45);
   });
 });
+
+describe("bullet captions with amounts after the name (as in the bread rolls reel)", () => {
+  const list = "&#x2022; Whole wheat flour &#x2013; 2 cups\n&#x2022; Warm milk &#x2013; &#xbd; cup\n&#x2022; Active dry yeast &#x2013; 1.5 tsp\n&#x2022; Salt &#x2013; &#xbd; tsp\n&#x2022; Soft butter &#x2013; 2.5 tbsp\n&#x2022; Mixed seeds + milk (for brushing)";
+  const caption = `Soft Seeded Bread Rolls\nIngredients:\n${list}\n&#x2e3b;\n${list}\nMethod:\n1&#xfe0f;&#x20e3; Mix the milk and yeast. Rest 10 minutes.`;
+  const r = parseRecipeText(caption);
+  it("puts amounts in the amount/unit columns and never shows codes or bullets", () => {
+    expect(r.ingredients.map((i) => [i.quantity, i.unit, i.name, i.note])).toEqual([
+      [2, "cup", "Whole wheat flour", ""], [0.5, "cup", "Warm milk", ""], [1.5, "tsp", "Active dry yeast", ""],
+      [0.5, "tsp", "Salt", ""], [2.5, "tbsp", "Soft butter", ""], [null, "", "Mixed seeds + milk", "for brushing"],
+    ]);
+    expect(JSON.stringify(r)).not.toMatch(/&#|•/);
+  });
+  it("drops a repeated ingredient list", () => expect(r.ingredients).toHaveLength(6));
+});

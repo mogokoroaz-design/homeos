@@ -21,7 +21,7 @@ export default async function SettingsPage() {
   const profiles = await prisma.householdProfile.findMany({ select: { id: true, name: true } });
   return (
     <>
-      <PageHeader title="Settings" sub={<>Data folder: <code className="text-xs">{dataDir()}</code></>} />
+      <PageHeader title="Settings" sub={<>Version <b className="text-ink">{process.env.NEXT_PUBLIC_HOMEOS_VERSION}</b> · Data folder: <code className="text-xs">{dataDir()}</code></>} />
       <div className="space-y-5">
         <Card>
           <CardHeader icon={<Bot className="h-4 w-4 text-accent" />} title="Assistant & AI" sub="Everything works without AI. Optional local AI runs on this Mac through Ollama (free); no data is ever sent to a cloud service." />
