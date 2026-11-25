@@ -15,6 +15,7 @@ export default async function LockPage({ searchParams }: { searchParams: Promise
       <p className="text-sm text-muted">{household?.name}</p>
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">{profiles.find((p) => p.id === profile && p.hasPin) ? `Enter ${profiles.find((p) => p.id === profile)!.name}'s PIN` : "Who's using HomeOS?"}</h1>
       <PinPad initialProfileId={profile} profiles={profiles.map((p) => ({ id: p.id, name: p.name, color: p.color, hasPin: p.hasPin }))} next={next && next.startsWith("/") && !next.startsWith("//") ? next : "/today"} />
+      <p className="mt-10 text-[11px] text-faint">Version {process.env.NEXT_PUBLIC_HOMEOS_VERSION}</p>
     </main>
   );
 }
