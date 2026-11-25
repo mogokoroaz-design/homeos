@@ -101,6 +101,52 @@ export function extractJsonLdRecipe(html: string, url: string): RecipeDraft | nu
   return null;
 }
 
+/** Inner text of every element whose class matches `cls` (no nesting of the same element type assumed). */
+function byClass(html: string, cls: RegExp, tags = "li|div|span|p|h[1-6]") {
+  const out: string[] = [];
+  const re = new RegExp(`<(${tags})\\b[^>]*class=["'][^"']*?(?:${cls.source})[^"']*["'][^>]*>([\\s\\S]*?)<\\/\\1>`, "gi");
+  for (const m of html.matchAll(re)) { const t = stripTags(m[2]); if (t) out.push(t); }
+  return out;
+}
+
+/**
+ * Recipe cards from the common WordPress plugins (WP Recipe Maker, Tasty Recipes, Mediavine Create,
+ * Easy Recipe) when a page has no schema.org data — read straight from the card's markup.
+ */
+export function extractRecipeCard(html: string, url: string): RecipeDraft | null {
+  let ingredients = byClass(html, /wprm-recipe-ingredient(?![-\w])/, "li");
+  if (!ingredients.length) {
+    const block = html.match(/<(?:div|ul|section)[^>]*class=["'][^"']*(?:tasty-recipes-ingredients|mv-create-ingredients|easyrecipe-ingredients|recipe-ingredients|ingredients-list)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|ul|section)>/i)?.[1] ?? "";
+    ingredients = [...block.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((m) => stripTags(m[1])).filter(Boolean);
+  }
+  if (ingredients.length < 2) return null;
+  let steps = byClass(html, /wprm-recipe-instruction-text/, "div|span|p");
+  if (!steps.length) {
+    const block = html.match(/<(?:div|ol|section)[^>]*class=["'][^"']*(?:tasty-recipes-instructions|mv-create-instructions|easyrecipe-instructions|recipe-instructions|instructions-list|recipe-directions)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|ol|section)>/i)?.[1] ?? "";
+    steps = [...block.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((m) => stripTags(m[1])).filter(Boolean);
+  }
+  const name = byClass(html, /wprm-recipe-name|tasty-recipes-title|mv-create-title/, "h[1-6]|div|span")[0] || metaContent(html, "og:title") || "Imported recipe";
+  const servings = Number(byClass(html, /wprm-recipe-servings(?![-\w])|tasty-recipes-yield|mv-create-yield/, "span|div")[0]?.match(/\d+/)?.[0]) || 2;
+  const mins = (k: string) => {
+    const h = Number(byClass(html, new RegExp(`wprm-recipe-${k}_time-hours`), "span")[0]?.match(/\d+/)?.[0] ?? 0);
+    const m = Number(byClass(html, new RegExp(`wprm-recipe-${k}_time-minutes`), "span")[0]?.match(/\d+/)?.[0] ?? 0);
+    return h * 60 + m || null;
+  };
+  const parsed = ingredients.map((l) => parseIngredientLine(l.replace(/\s*▢\s*/g, " ")));
+  return {
+    name: name.slice(0, 160), cuisine: "", servings, prepMinutes: mins("prep"), cookMinutes: mins("cook"), temperature: "",
+    instructions: steps.join("\n"), sourceType: "URL", sourceUrl: url, notes: "", tags: "",
+    ingredients: parsed.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit, note: i.note, optional: i.optional })),
+  };
+}
+
+/** WP Recipe Maker's printable page (often reachable when the article itself is heavy or blocked). */
+function wprmPrintUrl(url: string, html: string) {
+  const id = url.match(/wprm-recipe-container-(\d+)/)?.[1] ?? html.match(/wprm-recipe-container-(\d+)/)?.[1];
+  if (!id) return null;
+  try { return `${new URL(url).origin}/wprm_print/${id}`; } catch { return null; }
+}
+
 function metaContent(html: string, prop: string) {
   const re = new RegExp(`<meta[^>]+(?:property|name)=["']${prop}["'][^>]*content=["']([^"']*)["']|<meta[^>]+content=["']([^"']*)["'][^>]*(?:property|name)=["']${prop}["']`, "i");
   const m = html.match(re);
@@ -153,11 +199,28 @@ export async function importFromUrl(url: string, viewer: Pick<Viewer, "profileId
     html = await safeFetch(url);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return finish(platform, viewer, "", null, [`Couldn't open the link (${msg}).`, ...manualHint(platform)], { sourceUrl: url, error: msg });
+    // The recipe's printable page sometimes works when the article doesn't.
+    const print = platform === "URL" ? wprmPrintUrl(url, "") : null;
+    const printHtml = print ? await safeFetch(print).catch(() => "") : "";
+    const card = printHtml ? extractJsonLdRecipe(printHtml, url) ?? extractRecipeCard(printHtml, url) : null;
+    if (card && card.ingredients.length) return finish("URL", viewer, "", card, ["Read from the recipe's printable page."], { sourceUrl: url });
+    const blocked = /\b(401|403|429|503)\b/.test(msg);
+    return finish(platform, viewer, "", null, [
+      blocked ? "This website blocks apps from reading its pages (it only lets normal browsers in)." : `Couldn't open the link (${msg}).`,
+      ...(platform === "URL" ? ["Quick way: open the recipe in Safari, tap “Print recipe” (or scroll to the recipe card), select the ingredients and steps, copy, and paste into the Text tab. Or take screenshots and use the Screenshots tab."] : manualHint(platform)),
+    ], { sourceUrl: url, error: blocked ? "Site blocks automated reading" : msg });
   }
   if (platform === "URL") {
     const ld = extractJsonLdRecipe(html, url);
     if (ld && ld.ingredients.length) return finish("URL", viewer, "", ld, warnings, { sourceUrl: url });
+    const card = extractRecipeCard(html, url);
+    if (card) return finish("URL", viewer, "", card, ["Read from the recipe card on the page — check the amounts."], { sourceUrl: url });
+    const print = wprmPrintUrl(url, html);
+    if (print) {
+      const printHtml = await safeFetch(print).catch(() => "");
+      const fromPrint = printHtml ? extractJsonLdRecipe(printHtml, url) ?? extractRecipeCard(printHtml, url) : null;
+      if (fromPrint && fromPrint.ingredients.length) return finish("URL", viewer, "", fromPrint, ["Read from the recipe's printable page."], { sourceUrl: url });
+    }
     warnings.push("The page has no structured recipe data; extracted from page text instead.");
     const body = stripTags(html.replace(/<(script|style|nav|footer|header)[\s\S]*?<\/\1>/gi, " ").replace(/<\/(p|li|h\d|div|br)>/gi, "\n"));
     const parsed = parseRecipeText(body.split(/\s{2,}|\n/).join("\n"), metaContent(html, "og:title") || "Imported recipe");

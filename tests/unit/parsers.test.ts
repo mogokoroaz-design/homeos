@@ -144,3 +144,25 @@ describe("planning & nutrition math", () => {
     expect(suggestServings(null, "DINNER", 350)).toBe(1);
   });
 });
+
+import { extractRecipeCard } from "@/lib/food/importer";
+import { cleanDraft } from "@/lib/food/draft";
+describe("recipe cards without schema.org data", () => {
+  it("reads a WP Recipe Maker card", () => {
+    const html = `<h2 class="wprm-recipe-name">Easy Sugar Cookie Recipe</h2><span class="wprm-recipe-servings wprm-recipe-details">30</span>
+      <ul><li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-amount">1</span> <span class="wprm-recipe-ingredient-unit">cup</span> <span class="wprm-recipe-ingredient-name">unsalted butter</span> <span class="wprm-recipe-ingredient-notes">softened</span></li>
+      <li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-amount">2 ¾</span> <span class="wprm-recipe-ingredient-unit">cups</span> <span class="wprm-recipe-ingredient-name">all-purpose flour</span></li></ul>
+      <div class="wprm-recipe-instruction-text">Preheat oven to 350°F.</div><div class="wprm-recipe-instruction-text">Bake for 8-10 minutes.</div>`;
+    const r = extractRecipeCard(html, "https://example.com/r");
+    expect(r).toMatchObject({ name: "Easy Sugar Cookie Recipe", servings: 30, instructions: "Preheat oven to 350°F.\nBake for 8-10 minutes." });
+    expect(r?.ingredients[1]).toMatchObject({ name: "all-purpose flour", quantity: 2.75, unit: "cup" });
+  });
+  it("normalises odd draft data so the editor can't crash", () => {
+    const d = cleanDraft({ name: ["Cookies"], servings: "24 cookies", category: ["Dessert"], instructions: [{ text: "Mix" }, "Bake"], ingredients: ["2 eggs", { name: "flour", quantity: "2.5", unit: null }, null, { quantity: 3 }] });
+    expect(d).toMatchObject({ name: "Cookies", servings: 2, category: "dessert", instructions: "Mix\nBake" });
+    expect(d.ingredients).toEqual([
+      { name: "2 eggs", quantity: null, unit: "", note: "", optional: false, foodItemId: null },
+      { name: "flour", quantity: 2.5, unit: "", note: "", optional: false, foodItemId: null },
+    ]);
+  });
+});

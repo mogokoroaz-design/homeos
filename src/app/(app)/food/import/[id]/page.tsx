@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { reextractImport } from "@/lib/food/importer";
 import { RecipeEditor, EMPTY_RECIPE, type EditorRecipe } from "@/components/food/recipe-editor";
+import { cleanDraft } from "@/lib/food/draft";
 import { Card, CardBody, Badge, LinkButton } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
 import { discardImportAction, reextractImportAction } from "../../actions";
@@ -15,9 +16,9 @@ export default async function ImportReviewPage({ params }: { params: Promise<{ i
     await reextractImport(id).catch(() => undefined);
     imp = (await prisma.recipeImport.findUnique({ where: { id } }))!;
   }
-  const draft = JSON.parse(imp.extracted || "{}") as Partial<EditorRecipe>;
-  const warnings = JSON.parse(imp.warnings || "[]") as string[];
-  const initial: EditorRecipe = { ...EMPTY_RECIPE, ...draft, category: draft.category ?? "main", favourite: false, sourceType: draft.sourceType ?? imp.method, sourceUrl: draft.sourceUrl ?? imp.sourceUrl, ingredients: draft.ingredients ?? [] };
+  const parse = (s: string, d: unknown) => { try { return JSON.parse(s); } catch { return d; } };
+  const warnings = (parse(imp.warnings || "[]", []) as unknown[]).map(String);
+  const initial: EditorRecipe = { ...EMPTY_RECIPE, ...cleanDraft(parse(imp.extracted || "{}", {}), { sourceType: imp.method, sourceUrl: imp.sourceUrl }), favourite: false };
   return (
     <div className="space-y-5">
       <Card>
