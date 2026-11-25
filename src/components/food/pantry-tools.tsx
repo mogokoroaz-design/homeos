@@ -9,6 +9,7 @@ import { DialogButton } from "../dialog";
 import { quickPantry } from "@/app/(app)/actions";
 import { updatePantryAction, findByBarcodeAction } from "@/app/(app)/food/actions";
 import { UnitSelect } from "../shell/quick-add";
+import { notifyFoodChanged } from "./kitchen-bubble";
 
 /** Natural-language pantry entry → previewed change → approve. */
 export function ConversationalPantry() {
@@ -37,7 +38,7 @@ export function ConversationalPantry() {
         <Button type="submit" variant="primary" disabled={busy || !text.trim()}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Preview"}</Button>
       </form>
       {msg ? <p className="text-sm text-muted">{msg}</p> : null}
-      {card ? <ActionCard {...card} onDone={() => setTimeout(() => setCard(null), 1500)} /> : null}
+      {card ? <ActionCard {...card} onDone={() => { notifyFoodChanged(); setTimeout(() => setCard(null), 1500); }} /> : null}
     </div>
   );
 }

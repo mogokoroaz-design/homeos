@@ -10,6 +10,10 @@ import { currentTargets } from "./targets";
 import { parseDietPrefs, recipeViolations } from "./diet";
 import { normalizeName, singular } from "../utils";
 import type { Viewer } from "../auth/session";
+import { isFreeStaple } from "./staples";
+
+// Breads, sauces, sweets and drinks go with a meal; they aren't "what to eat next".
+const NOT_A_MEAL = /\b(bread|focaccia|ciabatta|naan|roti|chapati|paratha|tortilla|bun|rolls?|sauce|dressing|dip|chutney|pickle|jam|cookies?|biscuits?|cake|brownies?|muffins?|dessert|ice cream|syrup|drink|smoothie|tea|coffee|marinade|spice mix|masala powder)(?:e?s)?\b/i;
 
 // Classic, widely-known uses for staples — "with" lists the other usual ingredients so the
 // suggestion can say which of them you already have.
@@ -83,6 +87,7 @@ export async function kitchenSuggestions(viewer: Pick<Viewer, "profileId">, name
     const essential = r.ingredients.filter((i) => !i.optional);
     const missing: string[] = [];
     for (const ing of essential) {
+      if (isFreeStaple(ing.name)) continue;
       const items = (ing.foodItemId && stock.get(ing.foodItemId)) || [];
       if (ing.quantity === null) { if (!items.length) missing.push(ing.name); continue; }
       const avail = availabilityFrom(items, ing.foodItem ?? { gramsPerMl: null, gramsPerEach: null }, ing.unit);
@@ -96,7 +101,7 @@ export async function kitchenSuggestions(viewer: Pick<Viewer, "profileId">, name
   const keys = forNames.map(key);
   const useIt = allowed
     .map((r) => {
-      const uses = r.ingredients.filter((i) => (i.foodItemId && foodIds.has(i.foodItemId)) || keys.some((k) => key(i.name).includes(k) || k.includes(key(i.name)))).map((i) => i.name);
+      const uses = r.ingredients.filter((i) => (i.foodItemId && foodIds.has(i.foodItemId)) || keys.some((k) => key(i.name).includes(k) || k.includes(key(i.name)))).map((i) => i.foodItem?.name ?? i.name);
       return uses.length ? { id: r.id, name: r.name, favourite: r.favourite, uses: [...new Set(uses)], ...coverageOf(r) } : null;
     })
     .filter((x): x is NonNullable<typeof x> => Boolean(x))
@@ -128,7 +133,7 @@ export async function kitchenSuggestions(viewer: Pick<Viewer, "profileId">, name
   const slot = slotNow(now.getHours());
   const recent = new Set((await prisma.foodLogItem.findMany({ where: { foodLog: { profileId: viewer.profileId, date: { gte: addDays(d, -2) } }, recipeId: { not: null } }, select: { recipeId: true } })).map((x) => x.recipeId));
   let note: string | null = null;
-  const withNutrition = allowed.filter((r) => r.nutrition.coverage >= 0.7 && r.nutrition.perServing.kcal > 0);
+  const withNutrition = allowed.filter((r) => r.nutrition.coverage >= 0.7 && r.nutrition.perServing.kcal > 0 && !["dessert", "drink", "sauce", "side"].includes(r.category) && !NOT_A_MEAL.test(r.name));
   if (!target) note = "Set a calorie & protein target on your profile (People) and HomeOS will suggest meals that fit what you have left today.";
   else if (!withNutrition.length) note = "Once your saved recipes have nutrition (most ingredients now match automatically), HomeOS can pick meals that fit your targets.";
   else if (remaining && remaining.kcal < 150) note = `You've reached today's ${Math.round(target.kcal)} kcal target.`;
@@ -149,12 +154,13 @@ export async function kitchenSuggestions(viewer: Pick<Viewer, "profileId">, name
       const bits = [`${Math.round(ps.kcal)} kcal, ${Math.round(ps.protein)} g protein a serving`];
       bits.push(ps.kcal <= remaining.kcal ? `fits the ${remaining.kcal} kcal you have left` : `a bit over the ${remaining.kcal} kcal left`);
       if (proteinGap > 0.3 && ps.protein >= 20) bits.push(`helps with the ${remaining.protein} g protein still to go`);
-      bits.push(canCook ? "you have everything" : `missing ${cov.missing.slice(0, 2).join(", ")}${cov.missing.length > 2 ? "…" : ""}`);
+      bits.push(canCook ? "you have everything" : `${cov.missing.length} to buy`);
       return { id: r.id, name: r.name, kcal: Math.round(ps.kcal), protein: Math.round(ps.protein), canCook, reason: bits.join(" · "), score };
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
     .map(({ score: _s, ...p }) => { void _s; return p; });
 
-  return { forNames, useIt, ideas, next: { remaining, eaten, picks, note } };
+  const picked = new Set(picks.map((p) => p.id));
+  return { forNames, useIt: useIt.filter((r) => !picked.has(r.id)), ideas, next: { remaining, eaten, picks, note } };
 }

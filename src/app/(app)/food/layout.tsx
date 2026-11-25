@@ -1,4 +1,5 @@
 import { SectionTabs } from "@/components/section-tabs";
+import { KitchenBubble } from "@/components/food/kitchen-bubble";
 
 export default function FoodLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -16,6 +17,7 @@ export default function FoodLayout({ children }: { children: React.ReactNode }) 
         { href: "/food/catalogue", label: "Ingredients" },
       ]} />
       {children}
+      <KitchenBubble />
     </>
   );
 }

@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { buttonClass, type ButtonSize, type ButtonVariant } from "./ui";
 import { cn } from "@/lib/utils";
 
 export function Dialog({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
@@ -13,11 +14,11 @@ export function Dialog({ open, onClose, title, children, wide }: { open: boolean
     if (!open && d.open) d.close();
   }, [open]);
   return (
-    <dialog ref={ref} onClose={onClose} onClick={(e) => { if (e.target === ref.current) onClose(); }} className={cn("m-auto max-h-[90dvh] w-[calc(100%-2rem)] overflow-hidden rounded-2xl border border-line-strong bg-surface p-0 text-ink shadow-2xl", wide ? "max-w-3xl" : "max-w-lg")}>
+    <dialog ref={ref} aria-labelledby={titleId} onClose={onClose} onClick={(e) => { if (e.target === ref.current) onClose(); }} className={cn("m-auto max-h-[90dvh] w-[calc(100%-2rem)] overflow-hidden rounded-2xl border border-line-strong bg-surface p-0 text-ink shadow-2xl", wide ? "max-w-3xl" : "max-w-lg")}>
       {open ? (
         <div className="flex max-h-[90dvh] flex-col">
           <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-            <h2 className="text-base font-semibold">{title}</h2>
+            <h2 id={titleId} className="text-base font-semibold">{title}</h2>
             <button type="button" onClick={onClose} className={buttonClass("ghost", "iconSm")} aria-label="Close"><X className="h-4 w-4" /></button>
           </div>
           <div className="overflow-y-auto px-5 py-4">{children}</div>

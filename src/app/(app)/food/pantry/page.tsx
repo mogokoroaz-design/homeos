@@ -7,9 +7,6 @@ import { Card, CardHeader, Badge, Empty, Input, SectionTitle } from "@/component
 import { InlineAction } from "@/components/forms";
 import { ConversationalPantry, AddPantryForm, EditPantryDialog } from "@/components/food/pantry-tools";
 import { PhotoToPantry } from "@/components/food/photo-to-pantry";
-import { SuggestionsView } from "@/components/food/kitchen-suggestions";
-import { kitchenSuggestions } from "@/lib/food/suggest";
-import { requireViewer } from "@/lib/auth/session";
 import { setPantryQtyAction, wastePantryAction } from "../actions";
 import { cn } from "@/lib/utils";
 
@@ -18,17 +15,14 @@ const LOCS = [["FRIDGE", "Fridge"], ["FREEZER", "Freezer"], ["PANTRY", "Pantry"]
 
 export default async function PantryPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q } = await searchParams;
-  const viewer = await requireViewer();
-  const [items, low, history, suggestions] = await Promise.all([
+  const [items, low, history] = await Promise.all([
     listPantry({ q }),
     lowStock(),
     prisma.inventoryTransaction.findMany({ orderBy: { createdAt: "desc" }, take: 25 }),
-    kitchenSuggestions(viewer),
   ]);
   const d = today();
   return (
     <div className="space-y-5">
-      {suggestions.forNames.length && (suggestions.useIt.length || suggestions.ideas.length) ? <Card className="p-4"><p className="mb-3 text-xs uppercase tracking-wide text-faint">Kitchen assistant · from what you added recently</p><SuggestionsView s={{ ...suggestions, next: { ...suggestions.next, picks: [], note: null } }} compact /></Card> : null}
       <Card className="p-4"><ConversationalPantry /></Card>
       <Card className="p-4 space-y-3"><div className="flex flex-wrap items-center gap-2"><PhotoToPantry /><span className="text-sm text-faint">Snap your groceries, fridge shelf or a product label.</span></div><AddPantryForm /></Card>
       {low.length ? <div className="flex flex-wrap gap-2 text-sm"><span className="text-warn">Low stock:</span>{low.map((l) => <Badge key={l.name} tone="warn">{l.name} · {formatQuantity(l.quantity, l.unit)}</Badge>)}</div> : null}

@@ -27,51 +27,46 @@ function NeedButton({ need }: { need: string[] }) {
   );
 }
 
-export function SuggestionsView({ s, compact }: { s: Suggestions; compact?: boolean }) {
-  const empty = !s.useIt.length && !s.ideas.length && !s.next.picks.length && !s.next.note;
-  if (empty) return null;
+export function SuggestionsView({ s }: { s: Suggestions; compact?: boolean }) {
+  const hasNext = s.next.picks.length > 0 || Boolean(s.next.note);
+  const hasUse = s.useIt.length > 0 || s.ideas.length > 0;
+  if (!hasNext && !hasUse) return null;
   return (
-    <div className={cn("grid gap-4 text-sm", !compact && "lg:grid-cols-3")} aria-label="Kitchen assistant suggestions">
-      {s.useIt.length || s.ideas.length ? (
-        <section className={cn("space-y-2", !compact && "lg:col-span-2")}>
-          <p className="flex items-center gap-2 font-medium"><ChefHat className="h-4 w-4 text-accent" />Use {s.forNames.slice(0, 3).join(", ")}{s.forNames.length > 3 ? "…" : ""}</p>
-          {s.useIt.length ? (
-            <ul className="space-y-1.5">
-              {s.useIt.map((r) => (
-                <li key={r.id} className="flex flex-wrap items-center gap-2">
-                  <Link href={`/food/recipes/${r.id}`} className="font-medium text-ink hover:underline">{r.name}</Link>
-                  {r.coverage === 1 ? <Badge tone="accent">you have everything</Badge> : <Badge tone="warn">missing {r.missing.slice(0, 2).join(", ")}{r.missing.length > 2 ? "…" : ""}</Badge>}
-                  <span className="text-xs text-faint">your recipe · uses {r.uses.join(", ")}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {s.ideas.length ? (
-            <ul className="space-y-1.5">
-              {s.ideas.map((i) => (
-                <li key={i.title} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <Lightbulb className="h-3.5 w-3.5 text-warn" />
-                  <span className="font-medium">{i.title}</span>
-                  <span className="text-xs text-faint">new idea for {i.uses.toLowerCase()}{i.have.length ? ` · you have ${i.have.join(", ")}` : ""}{i.need.length ? ` · need ${i.need.join(", ")}` : ""}</span>
-                  <NeedButton need={i.need} />
-                  <Link href={`/food/assistant?q=${encodeURIComponent(`Draft a recipe for ${i.title.toLowerCase()} using ${i.uses.toLowerCase()}`)}`} className="text-xs text-info hover:underline">recipe →</Link>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
-      ) : null}
-      {s.next.picks.length || s.next.note ? (
-        <section className="space-y-2">
-          <p className="flex items-center gap-2 font-medium"><Target className="h-4 w-4 text-info" />What to eat next</p>
-          {s.next.remaining ? <p className="text-xs text-faint">Today: {s.next.eaten.kcal} kcal and {s.next.eaten.protein} g protein logged · {s.next.remaining.kcal} kcal, {s.next.remaining.protein} g protein to go</p> : null}
+    <div className="space-y-5 text-sm" aria-label="Kitchen assistant suggestions">
+      {hasNext ? (
+        <section className="space-y-2.5">
+          <div>
+            <p className="flex items-center gap-2 font-medium"><Target className="h-4 w-4 text-info" />What to eat next</p>
+            {s.next.remaining ? <p className="mt-0.5 text-xs text-faint">{s.next.eaten.kcal ? `${s.next.eaten.kcal} kcal eaten today · ` : ""}{s.next.remaining.kcal} kcal and {s.next.remaining.protein} g protein left for today</p> : null}
+          </div>
           {s.next.picks.map((p) => (
-            <div key={p.id}>
+            <div key={p.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <Link href={`/food/recipes/${p.id}`} className="font-medium hover:underline">{p.name}</Link>
-              <p className="text-xs text-muted">{p.reason}</p>
+              {p.canCook ? <Badge tone="accent">ready to cook</Badge> : null}
+              <span className="w-full text-xs text-muted">{p.kcal} kcal · {p.protein} g protein a serving</span>
             </div>
           ))}
           {s.next.note ? <p className="text-xs text-muted">{s.next.note}</p> : null}
+        </section>
+      ) : null}
+      {hasUse ? (
+        <section className="space-y-2.5">
+          <p className="flex items-center gap-2 font-medium"><ChefHat className="h-4 w-4 text-accent" />Use what you added{s.forNames.length ? <span className="font-normal text-faint">· {s.forNames.slice(0, 3).join(", ").toLowerCase()}{s.forNames.length > 3 ? "…" : ""}</span> : null}</p>
+          {s.useIt.map((r) => (
+            <div key={r.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <Link href={`/food/recipes/${r.id}`} className="font-medium hover:underline">{r.name}</Link>
+              {r.coverage === 1 ? <Badge tone="accent">ready to cook</Badge> : null}
+              <span className="w-full text-xs text-faint">your recipe · uses {r.uses.slice(0, 2).join(", ").toLowerCase()}</span>
+            </div>
+          ))}
+          {s.ideas.map((i) => (
+            <div key={i.title} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <Lightbulb className="h-3.5 w-3.5 shrink-0 self-center text-warn" />
+              <span className="font-medium">{i.title}</span>
+              <Link href={`/food/assistant?q=${encodeURIComponent(`Draft a recipe for ${i.title.toLowerCase()} using ${i.uses.toLowerCase()}`)}`} className="text-xs text-info hover:underline">recipe →</Link>
+              <span className="flex w-full flex-wrap items-center gap-x-2 text-xs text-faint">new idea for {i.uses.toLowerCase()}{i.have.length ? ` · you have ${i.have.join(", ")}` : ""}<NeedButton need={i.need} /></span>
+            </div>
+          ))}
         </section>
       ) : null}
     </div>

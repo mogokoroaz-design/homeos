@@ -89,9 +89,17 @@ test("recipe → meal plan with per-person portions → grocery list", async ({ 
   await page.getByRole("dialog").getByRole("button", { name: "Add to plan" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
   await page.goto("/food/plan");
-  await expect(page.getByRole("link", { name }).first()).toBeVisible();
-  await expect(page.getByLabel("Alex servings").first()).toBeVisible();
-  await expect(page.getByLabel("Sam servings").first()).toBeVisible();
+  // Compact card shows just the name; details open on click.
+  const card = page.getByRole("button", { name: `${name} — details` }).first();
+  await expect(card).toBeVisible();
+  await expect(page.getByLabel("Alex servings")).toHaveCount(0);
+  await card.click();
+  const details = page.getByRole("dialog", { name });
+  await expect(details.getByLabel("Alex servings")).toBeVisible();
+  await expect(details.getByLabel("Sam servings")).toBeVisible();
+  await expect(details.getByText("Still to buy for this meal")).toBeVisible();
+  await expect(details.getByRole("link", { name: "Open recipe →" })).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.goto("/food/grocery");
   await expect(page.getByText("Spaghetti", { exact: true }).first()).toBeVisible();
 });
@@ -437,5 +445,18 @@ test("kitchen assistant on the Food page suggests uses for what was just added",
   await expect(page.getByText(/Added 1 kg/i)).toBeVisible();
   await page.goto("/food");
   await expect(page.getByText("Pancakes").first()).toBeVisible();
-  await expect(page.getByText("What to eat next")).toBeVisible();
+  await expect(page.getByText("What to eat next").first()).toBeVisible();
+  // No "missing …" tags in the assistant's suggestions.
+  await expect(page.getByLabel("Kitchen assistant suggestions").first().getByText(/^missing /)).toHaveCount(0);
+  // The floating bubble pops a small tip by itself after new food was added; tapping it opens the assistant.
+  const tip = page.getByRole("note", { name: "Kitchen assistant tip" });
+  await expect(tip).toBeVisible();
+  await tip.getByRole("button", { name: /tap to see/ }).click();
+  const bubble = page.getByRole("dialog", { name: "Kitchen assistant" });
+  await expect(bubble.getByText("Pancakes")).toBeVisible();
+  await bubble.getByRole("button", { name: "Close kitchen assistant" }).click();
+  await expect(bubble).toBeHidden();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Kitchen assistant" })).toBeVisible();
+  await expect(tip).toBeHidden(); // already seen → doesn't pop again
 });

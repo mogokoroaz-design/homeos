@@ -10,6 +10,8 @@ import { formatCents } from "@/lib/money";
 import { Card, CardHeader, CardBody, LinkButton, Badge, buttonClass } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
 import { MealCard } from "@/components/food/meal-card";
+import { pantryByFood } from "@/lib/food/pantry";
+import { checkRecipeAgainstPantry } from "@/lib/food/recipes";
 import { AddMealDialog } from "@/components/food/meal-dialogs";
 import { PlanAssistant } from "@/components/food/plan-assistant";
 import { copyWeekAction } from "../actions";
@@ -67,6 +69,15 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
     if (e) est += e.cents; else unpriced++;
   }
   const toBuy = reqs.filter((r) => r.toBuy === null || r.toBuy > 0).length;
+  // What each planned meal still needs (shown when a meal is opened).
+  const stock = await pantryByFood();
+  const missing = new Map<string, string[]>();
+  for (const m of items) {
+    if (!m.recipeId || m.status !== "PLANNED" || m.isLeftover) continue;
+    const total = m.servings.reduce((a, x) => a + x.servings, 0);
+    const check = await checkRecipeAgainstPantry(m.recipeId, total > 0 ? total : undefined, stock).catch(() => null);
+    if (check) missing.set(m.id, check.checks.filter((c) => !c.optional && (c.status === "missing" || c.status === "partial")).map((c) => c.name));
+  }
 
   return (
     <div className="space-y-5">
@@ -109,7 +120,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
                         {list.map((m) => (
                           <MealCard key={m.id} meal={{
                             id: m.id, title: m.title, slot: m.slot, date: m.date, status: m.status, recipeId: m.recipeId, isLeftover: m.isLeftover, cookTime: m.cookTime, prepNote: m.prepNote,
-                            kcalPerServing: m.nutrition?.complete ? m.nutrition.perServing.kcal : null, verified: Boolean(m.nutrition?.verified), dietWarnings: dietWarnings(m),
+                            kcalPerServing: m.nutrition && m.nutrition.coverage >= 0.7 && m.nutrition.perServing.kcal > 0 ? m.nutrition.perServing.kcal : null, verified: Boolean(m.nutrition?.verified && m.nutrition.complete), dietWarnings: dietWarnings(m), missing: missing.get(m.id) ?? [],
                             servings: m.servings.map((s) => ({ profileId: s.profileId, name: s.profile.name, color: s.profile.color, servings: s.servings, targetKcal: targets[s.profileId] })),
                           }} />
                         ))}
@@ -121,7 +132,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
               </div>
               <div className="space-y-0.5 border-t border-line px-3 py-2">
                 {profiles.map((p) => {
-                  const planned = dayItems.reduce((a, m) => a + (m.nutrition?.complete ? m.nutrition.perServing.kcal * (m.servings.find((s) => s.profileId === p.id)?.servings ?? 0) : 0), 0);
+                  const planned = dayItems.reduce((a, m) => a + (m.nutrition && m.nutrition.coverage >= 0.7 ? m.nutrition.perServing.kcal * (m.servings.find((s) => s.profileId === p.id)?.servings ?? 0) : 0), 0);
                   return <p key={p.id} className="flex justify-between text-[11px] text-faint"><span>{p.name}</span><span className="tabular">{Math.round(planned)}{targets[p.id] ? ` / ${targets[p.id]}` : ""} kcal</span></p>;
                 })}
               </div>

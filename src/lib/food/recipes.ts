@@ -6,6 +6,7 @@ import { normalizeUnit, convert, formatQuantity } from "../units";
 import { decodeEntities } from "./parse";
 import { availabilityFrom, pantryByFood } from "./pantry";
 import { audit } from "../audit";
+import { isFreeStaple } from "./staples";
 import type { Viewer } from "../auth/session";
 
 export const recipeIngredientInput = z.object({
@@ -116,6 +117,7 @@ export async function checkRecipeAgainstPantry(recipeId: string, servings?: numb
   const stock = pantry ?? (await pantryByFood());
   const factor = servings ? servings / recipe.servings : 1;
   const checks: IngredientCheck[] = recipe.ingredients.map((ing) => {
+    if (isFreeStaple(ing.name)) return { name: ing.name, foodItemId: ing.foodItemId, required: ing.quantity === null ? null : ing.quantity * factor, unit: ing.unit, available: ing.quantity ?? 1, missing: 0, status: "have" as const, confidence: "CONFIRMED", optional: ing.optional };
     const items = (ing.foodItemId && stock.get(ing.foodItemId)) || [];
     if (ing.quantity === null) {
       return { name: ing.name, foodItemId: ing.foodItemId, required: null, unit: "", available: items.length ? 1 : 0, missing: 0, status: items.length ? "have" : "unknown", confidence: items[0]?.confidence ?? "—", optional: true };

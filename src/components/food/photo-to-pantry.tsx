@@ -6,6 +6,7 @@ import { Button, Input, Select, Badge, buttonClass } from "../ui";
 import { Dialog } from "../dialog";
 import { addPhotoItemsAction, lookupBarcodeAction } from "@/app/(app)/food/actions";
 import { KitchenSuggestions } from "./kitchen-suggestions";
+import { notifyFoodChanged } from "./kitchen-bubble";
 
 type Dest = "PANTRY" | "LIST";
 type Loc = "FRIDGE" | "FREEZER" | "PANTRY" | "OTHER";
@@ -129,6 +130,7 @@ export function PhotoToPantry({ defaultDestination = "PANTRY" }: { defaultDestin
     setDone({ message: res.message ?? "Added", names: chosen.filter((r) => r.destination === "PANTRY").map((r) => r.name.trim()) });
     setRows([]);
     router.refresh();
+    notifyFoodChanged();
   };
 
   const close = () => { setOpen(false); if (preview) URL.revokeObjectURL(preview); setPreview(null); };

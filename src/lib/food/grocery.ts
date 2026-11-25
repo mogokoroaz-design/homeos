@@ -1,3 +1,4 @@
+import { isFreeStaple } from "./staples";
 import { prisma, type Tx } from "../db";
 import { convert, normalizeUnit, toBase, dimensionOf, packagesNeeded, formatQuantity } from "../units";
 import { availabilityFrom, pantryByFood, addToPantry } from "./pantry";
@@ -41,6 +42,7 @@ export async function computeRequirements(from: string, to: string, tx: Tx = pri
     const servings = total > 0 ? total : item.recipe.servings;
     const factor = servings / item.recipe.servings;
     for (const ing of item.recipe.ingredients) {
+      if (isFreeStaple(ing.name)) continue;
       const food = ing.foodItem;
       const foodKey = food?.id ?? `name:${canonicalKey(ing.name)}`;
       if (ing.quantity === null) {

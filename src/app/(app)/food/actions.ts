@@ -447,3 +447,11 @@ export async function kitchenSuggestionsAction(names: string[]) {
   const viewer = await requireViewer();
   return kitchenSuggestions(viewer, z.array(z.string().max(120)).max(20).parse(names));
 }
+export async function kitchenBubbleAction() {
+  const viewer = await requireViewer();
+  const [s, latest] = await Promise.all([
+    kitchenSuggestions(viewer),
+    prisma.inventoryTransaction.findFirst({ where: { delta: { gt: 0 }, reason: { in: ["PURCHASE", "RECEIPT", "SHOPPING", "ADJUST"] }, createdAt: { gte: new Date(Date.now() - 3 * 86400_000) } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+  ]);
+  return { s, latest: latest?.createdAt.toISOString() ?? null };
+}
