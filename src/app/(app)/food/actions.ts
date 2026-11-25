@@ -17,6 +17,7 @@ import { proposeAction } from "@/lib/ai/actions";
 import { proposeMealPlan, parsePlanRequest } from "@/lib/food/planner";
 import { importFromUrl, importFromText, reextractImport } from "@/lib/food/importer";
 import { parseMoneyToCents } from "@/lib/money";
+import { parseIngredientLine } from "@/lib/food/parse";
 import { round } from "@/lib/utils";
 import { audit } from "@/lib/audit";
 
@@ -389,4 +390,20 @@ export async function addPhotoItemsAction(json: string): Promise<ActionResult<{ 
     await audit({ profileId: viewer.profileId, action: "food.photo", entityType: "file", entityId: photoId ?? undefined, summary: `Photo: ${toPantry.length} to pantry, ${toList.length} to shopping list` });
     return { pantry: toPantry.length, list: toList.length };
   }, (r) => [r.pantry ? `${r.pantry} added to the pantry` : "", r.list ? `${r.list} added to the shopping list` : ""].filter(Boolean).join(", "));
+}
+
+// ── Voice: "add milk and eggs to the shopping list" ──
+export async function addSpokenShoppingAction(names: string[]): Promise<ActionResult<{ added: string[] }>> {
+  const viewer = await requireViewer();
+  return run(async () => {
+    const list = z.array(z.string().trim().min(1).max(120)).min(1, "Nothing to add").max(30).parse(names);
+    const added: string[] = [];
+    for (const raw of list) {
+      const p = parseIngredientLine(raw);
+      const r = await addGroceryItem({ name: p.name || raw, quantity: p.quantity ?? 1, unit: p.quantity === null ? "each" : p.unit || "each", source: "VOICE" });
+      added.push(r.item?.name ?? p.name ?? raw);
+    }
+    await audit({ profileId: viewer.profileId, action: "grocery.voice", entityType: "grocery", summary: `Voice: ${added.join(", ")}` });
+    return { added };
+  }, (r) => `Added to the shopping list: ${r.added.join(", ")}`);
 }

@@ -246,7 +246,7 @@ test("every page loads without errors", async ({ page }) => {
   let current = "";
   page.on("pageerror", (e) => errors.push(`${current}: ${e.message.slice(0, 80)}`));
   await unlock(page, "Alex", "1234");
-  for (const path of ["/today", "/people", "/food", "/food/plan", "/food/plan?view=month", "/food/recipes", "/food/recipes/new", "/food/pantry", "/food/grocery", "/food/nutrition", "/food/assistant", "/food/import", "/food/catalogue", "/home", "/home/services", "/home/maintenance", "/money", "/money/expenses", "/money/receipts", "/money/bills", "/money/budgets", "/money/prices", "/projects", "/projects/new", "/calendar", "/insights", "/notes", "/assistant", "/settings"]) {
+  for (const path of ["/today", "/people", "/food", "/food/plan", "/food/plan?view=month", "/food/recipes", "/food/recipes/new", "/food/recipes/dictate", "/food/pantry", "/food/grocery", "/food/nutrition", "/food/assistant", "/food/import", "/food/catalogue", "/home", "/home/services", "/home/maintenance", "/money", "/money/expenses", "/money/receipts", "/money/bills", "/money/budgets", "/money/prices", "/projects", "/projects/new", "/calendar", "/insights", "/notes", "/assistant", "/settings"]) {
     current = path;
     const res = await page.goto(path);
     expect(res?.status(), path).toBe(200);
@@ -344,4 +344,57 @@ test("typed recipe keeps its ingredients even without pressing Parse & add", asy
   await expect(page.getByText("3 items", { exact: false }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /500 g chicken, minced/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /2 tbsp soy sauce/ })).toBeVisible();
+});
+
+test("cook & dictate: voice builds the recipe, times it, and fills the shopping list", async ({ page }, info) => {
+  // Headless browsers have no microphone: install a stand-in speech recogniser driven by window.__say().
+  await page.addInitScript(() => {
+    type Ev = { resultIndex: number; results: ({ isFinal: boolean } & { transcript: string }[])[] };
+    class FakeSR {
+      lang = ""; continuous = false; interimResults = false;
+      onresult: ((e: Ev) => void) | null = null; onend: (() => void) | null = null; onerror: ((e: { error: string }) => void) | null = null;
+      start() { (window as unknown as { __rec: FakeSR }).__rec = this; }
+      stop() { this.onend?.(); }
+      abort() {}
+    }
+    (window as unknown as Record<string, unknown>).webkitSpeechRecognition = FakeSR;
+    (window as unknown as Record<string, unknown>).SpeechRecognition = FakeSR;
+    (window as unknown as Record<string, unknown>).__say = (t: string) => {
+      const r = (window as unknown as { __rec: FakeSR }).__rec;
+      const res = Object.assign([{ transcript: t }], { isFinal: true });
+      r.onresult?.({ resultIndex: 0, results: [res] });
+    };
+  });
+  const say = (t: string) => page.evaluate((x) => (window as unknown as { __say: (s: string) => void }).__say(x), t);
+  const tag = info.project.name;
+  await unlock(page, "Alex", "1234");
+  await page.goto("/food/recipes");
+  await page.getByRole("link", { name: "Cook & dictate" }).click();
+  await page.getByRole("button", { name: "Start cooking" }).click();
+  await expect(page.getByText("Listening… just talk as you cook.")).toBeVisible();
+  await say(`This recipe is called voice basil chicken ${tag}`);
+  await say("Okay finely chop the onion garlic and chilli");
+  await say("Add 500 grams minced chicken");
+  await say("now two tablespoons of soy sauce and one tablespoon sugar");
+  await say("add thai basil to the shopping list");
+  await say("Serves four");
+  await expect(page.getByTestId("cook-entry")).toHaveCount(6);
+  await expect(page.getByText(/Added to the shopping list: Thai basil/i)).toBeVisible();
+  await expect(page.getByRole("list", { name: "Draft ingredients" }).getByRole("listitem")).toHaveCount(3);
+  // Typed sentences go through the same pipeline (keyboard dictation on iPad).
+  await page.getByLabel("Say or type what you're doing").fill("simmer for 5 minutes");
+  await page.getByRole("button", { name: "Add sentence" }).click();
+  await say("scratch that");
+  await expect(page.getByTestId("cook-entry")).toHaveCount(6);
+  await expect(page.getByTestId("cook-timer")).not.toHaveText("0:00");
+  await say("I'm done");
+  await page.waitForURL(/\/food\/recipes\/new\?draft=1/);
+  await expect(page.getByLabel("Recipe name")).toHaveValue(new RegExp(`Voice Basil Chicken ${tag}`, "i"));
+  await expect(page.getByLabel("Ingredient")).toHaveCount(3);
+  await page.getByRole("button", { name: "Save recipe" }).click();
+  await page.waitForURL(/\/food\/recipes\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("button", { name: /500 g chicken, minced/ })).toBeVisible();
+  await expect(page.getByText("Finely chop the onion garlic and chilli", { exact: true })).toBeVisible();
+  await page.goto("/food/grocery");
+  await expect(page.getByText(/thai basil/i).first()).toBeVisible();
 });

@@ -14,6 +14,7 @@ import { CompleteShopping, AddGroceryForm, SyncGroceryForm } from "@/components/
 import { toggleGroceryAction, setGroceryPriceAction, deleteGroceryAction, moveSectionAction, setItemSectionAction } from "../actions";
 import { cn } from "@/lib/utils";
 import { PhotoToPantry } from "@/components/food/photo-to-pantry";
+import { GroceryVoice } from "@/components/food/grocery-voice";
 
 export const metadata = { title: "Groceries" };
 
@@ -38,7 +39,7 @@ export default async function GroceryPage() {
     <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
       <div className="space-y-5">
         <Card className="p-4"><SyncGroceryForm from={range.from} to={range.to} /><p className="mt-2 text-xs text-faint">Meal-plan items update automatically whenever meals, portions or pantry stock change. Items you add manually are never removed.</p></Card>
-        <Card className="p-4 space-y-3"><div className="flex flex-wrap items-center gap-2"><PhotoToPantry defaultDestination="LIST" /><span className="text-sm text-faint">Photo of an empty package or a handwritten list → shopping list.</span></div><AddGroceryForm /></Card>
+        <Card className="p-4 space-y-3"><div className="flex flex-wrap items-center gap-2"><PhotoToPantry defaultDestination="LIST" /><GroceryVoice /><span className="text-sm text-faint">Photo of an empty package → shopping list, or tap the mic and say “milk, eggs and 2 kg rice”.</span></div><AddGroceryForm /></Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">{items.length - checked} to buy · est. <span className="tabular text-ink">{formatCents(est, viewer.currency)}</span>{checked ? <> · {checked} in cart{actual ? <> · <span className="tabular text-ink">{formatCents(actual, viewer.currency)}</span></> : null}</> : null}</p>
           {checked ? <CompleteShopping listId={list.id} checkedCount={checked} actualTotal={actual ? centsToInput(actual) : ""} profiles={profiles} viewerId={viewer.profileId} stores={stores.map((s) => s.name)} /> : null}

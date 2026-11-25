@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, Star, Clock, BookOpen, Download } from "lucide-react";
+import { Plus, Star, Clock, BookOpen, Download, Mic } from "lucide-react";
 import { listRecipes } from "@/lib/food/recipes";
 import { prisma } from "@/lib/db";
 import { dietBadges, DIET_LABELS } from "@/lib/food/diet";
@@ -27,6 +27,7 @@ export default async function RecipesPage({ searchParams }: { searchParams: Prom
           <button className="h-11 rounded-xl border border-line-strong px-4 text-sm">Filter</button>
         </form>
         <LinkButton href="/food/import" variant="secondary"><Download className="h-4 w-4" />Import</LinkButton>
+        <LinkButton href="/food/recipes/dictate" variant="secondary"><Mic className="h-4 w-4" />Cook &amp; dictate</LinkButton>
         <LinkButton href="/food/recipes/new" variant="primary"><Plus className="h-4 w-4" />New recipe</LinkButton>
       </div>
       {collections.length ? (

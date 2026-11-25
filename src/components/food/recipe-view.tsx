@@ -4,7 +4,8 @@ import { Minus, Plus, ChefHat, Timer, X, ChevronLeft, ChevronRight, Mic, MicOff,
 import { Card, CardHeader, Badge, Button, buttonClass } from "../ui";
 import { InlineAction } from "../forms";
 import { displayQuantity, findTimers, formatClock, type UnitSystem } from "@/lib/food/display";
-import { addMissingToListAction } from "@/app/(app)/food/actions";
+import { addMissingToListAction, addSpokenShoppingAction } from "@/app/(app)/food/actions";
+import { classifyUtterance } from "@/lib/food/dictation";
 import { cn } from "@/lib/utils";
 
 export interface ViewIngredient {
@@ -232,6 +233,12 @@ function CookMode({ recipe, rows, servings, timers, onClose }: { recipe: ViewRec
       const res = e.results[e.results.length - 1];
       if (!res?.isFinal) return;
       const text = res[0].transcript;
+      const shop = classifyUtterance(text);
+      if (shop.kind === "shopping" && shop.shopping?.length) {
+        setHeard(`Adding ${shop.shopping.join(", ")} to the shopping list…`);
+        void addSpokenShoppingAction(shop.shopping).then((r) => { setHeard(r.ok ? `✓ ${r.message}` : r.error); say(r.ok ? `Added ${shop.shopping!.join(" and ")} to the shopping list` : "Sorry, that didn't work"); });
+        return;
+      }
       const cmd = voiceCommand(text);
       setHeard(cmd ? `“${text.trim()}”` : null);
       const { i: cur, stepTimers: st } = stateRef.current;
@@ -268,7 +275,7 @@ function CookMode({ recipe, rows, servings, timers, onClose }: { recipe: ViewRec
           </div>
           <TimerBar api={timers} className="mt-6" />
           <div className="mt-auto pt-6">
-            {listening ? <p className="mb-3 text-sm text-muted">Listening — say <b className="text-ink">next</b>, <b className="text-ink">back</b>, <b className="text-ink">repeat</b>, <b className="text-ink">start timer</b> or <b className="text-ink">ingredients</b>.{heard ? ` Heard ${heard}` : ""}</p> : heard ? <p className="mb-3 text-sm text-warn">{heard}</p> : null}
+            {listening ? <p className="mb-3 text-sm text-muted">Listening — say <b className="text-ink">next</b>, <b className="text-ink">back</b>, <b className="text-ink">repeat</b>, <b className="text-ink">start timer</b> or <b className="text-ink">ingredients</b>, or “add basil to the shopping list”.{heard ? ` Heard ${heard}` : ""}</p> : heard ? <p className="mb-3 text-sm text-warn">{heard}</p> : null}
             {awake === "unsupported" ? <p className="mb-3 text-xs text-faint">This browser can&apos;t keep the screen on automatically here (needs HTTPS on iPad). Set Settings → Display &amp; Brightness → Auto-Lock to Never while cooking.</p> : null}
             <div className="grid grid-cols-2 gap-3">
               <button type="button" onClick={() => go(-1)} disabled={i === 0} className="flex h-20 items-center justify-center gap-2 rounded-2xl border border-line-strong text-lg font-medium disabled:opacity-30"><ChevronLeft className="h-6 w-6" />Back</button>
