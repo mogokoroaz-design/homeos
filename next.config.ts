@@ -13,7 +13,7 @@ function version() {
 }
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["tesseract.js", "tesseract.js-core", "@tesseract.js-data/eng"],
+  serverExternalPackages: ["tesseract.js", "tesseract.js-core", "@tesseract.js-data/eng", "sharp", "zxing-wasm"],
   experimental: { serverActions: { bodySizeLimit: "4mb" } },
   env: { NEXT_PUBLIC_HOMEOS_VERSION: version() },
   poweredByHeader: false,

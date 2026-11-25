@@ -25,7 +25,7 @@ export default async function SettingsPage() {
       <div className="space-y-5">
         <Card>
           <CardHeader icon={<Bot className="h-4 w-4 text-accent" />} title="Assistant & AI" sub="Everything works without AI. Optional local AI runs on this Mac through Ollama (free); no data is ever sent to a cloud service." />
-          <CardBody><AISettings provider={ai.provider} url={ai.ollamaUrl} model={ai.ollamaModel} visionModel={ai.visionModel} /></CardBody>
+          <CardBody><AISettings provider={ai.provider} url={ai.ollamaUrl} model={ai.ollamaModel} visionModel={ai.visionModel} barcodeLookup={await getSetting("food.barcodeLookup", "ask")} /></CardBody>
         </Card>
         <Card>
           <CardHeader icon={<LayoutDashboard className="h-4 w-4 text-accent" />} title="My Today dashboard" />

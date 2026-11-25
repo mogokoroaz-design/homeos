@@ -18,6 +18,10 @@ import { proposeMealPlan, parsePlanRequest } from "@/lib/food/planner";
 import { importFromUrl, importFromText, reextractImport } from "@/lib/food/importer";
 import { parseMoneyToCents } from "@/lib/money";
 import { parseIngredientLine } from "@/lib/food/parse";
+import { lookupOpenFoodFacts } from "@/lib/food/label";
+import { kitchenSuggestions } from "@/lib/food/suggest";
+import { setSetting } from "@/lib/settings";
+import { ensureFoodItem, loadFoodIndex } from "@/lib/food/catalog";
 import { round } from "@/lib/utils";
 import { audit } from "@/lib/audit";
 
@@ -371,12 +375,29 @@ const photoItems = z.object({
     foodItemId: z.string().uuid().nullable(),
     destination: z.enum(["PANTRY", "LIST"]),
     checked: z.boolean(), // the person confirmed/edited the amount
+    barcode: z.string().regex(/^\d{8,14}$/).nullable().optional(),
+    nutrition: z.object({ kcal: z.number().min(0).max(950).nullable(), protein: z.number().min(0).max(100).nullable(), carbs: z.number().min(0).max(100).nullable(), fat: z.number().min(0).max(100).nullable(), fibre: z.number().min(0).max(100).nullable() }).nullable().optional(),
+    nutritionSource: z.enum(["LABEL", "OPEN_FOOD_FACTS"]).optional(),
   })).min(1, "Nothing selected").max(80),
 });
 export async function addPhotoItemsAction(json: string): Promise<ActionResult<{ pantry: number; list: number }>> {
   const viewer = await requireViewer();
   return run(async () => {
-    const { photoId, items } = photoItems.parse(JSON.parse(json));
+    const { photoId, items: raw } = photoItems.parse(JSON.parse(json));
+    // Resolve each item to a catalogue entry, then save label nutrition and barcodes on it.
+    const index = await loadFoodIndex();
+    const items = [];
+    for (const i of raw) {
+      const unit = i.quantity === null ? "each" : i.unit;
+      const food = i.foodItemId ? await prisma.foodItem.findUniqueOrThrow({ where: { id: i.foodItemId } }) : await ensureFoodItem(i.name, prisma, index, { unit });
+      const n = i.nutrition;
+      const data = {
+        ...(n && Object.values(n).some((v) => v !== null) ? { kcalPer100g: n.kcal, proteinPer100g: n.protein, carbsPer100g: n.carbs, fatPer100g: n.fat, fibrePer100g: n.fibre, nutritionSource: i.nutritionSource ?? "LABEL", nutritionVerified: true } : {}),
+        ...(i.barcode && !(await prisma.foodItem.findFirst({ where: { barcode: i.barcode, NOT: { id: food.id } } })) ? { barcode: i.barcode } : {}),
+      };
+      if (Object.keys(data).length) await prisma.foodItem.update({ where: { id: food.id }, data });
+      items.push({ ...i, foodItemId: food.id });
+    }
     const toPantry = items.filter((i) => i.destination === "PANTRY");
     const toList = items.filter((i) => i.destination === "LIST");
     if (toPantry.length) {
@@ -406,4 +427,23 @@ export async function addSpokenShoppingAction(names: string[]): Promise<ActionRe
     await audit({ profileId: viewer.profileId, action: "grocery.voice", entityType: "grocery", summary: `Voice: ${added.join(", ")}` });
     return { added };
   }, (r) => `Added to the shopping list: ${r.added.join(", ")}`);
+}
+
+// ── Barcode lookup (Open Food Facts; only the number is sent, and only when allowed) ──
+export async function lookupBarcodeAction(code: string, remember: boolean): Promise<ActionResult<Awaited<ReturnType<typeof lookupOpenFoodFacts>>>> {
+  const viewer = await requireViewer();
+  return run(async () => {
+    const barcode = z.string().regex(/^\d{8,14}$/, "Not a product barcode").parse(code);
+    if (remember) await setSetting("food.barcodeLookup", "always");
+    const product = await lookupOpenFoodFacts(barcode);
+    await audit({ profileId: viewer.profileId, action: "food.barcodeLookup", entityType: "barcode", summary: `Open Food Facts: ${barcode} → ${product?.name ?? "not found"}` });
+    if (!product) throw new Error("Open Food Facts doesn't know this barcode. Type the name instead.");
+    return product;
+  });
+}
+
+// ── Proactive kitchen assistant ──
+export async function kitchenSuggestionsAction(names: string[]) {
+  const viewer = await requireViewer();
+  return kitchenSuggestions(viewer, z.array(z.string().max(120)).max(20).parse(names));
 }

@@ -1,7 +1,7 @@
 import { prisma, type Tx } from "../db";
 import { normalizeName, singular, titleCase, tokens } from "../utils";
 import { guessCategory } from "./categories";
-import { categoryForGroup, getReferenceFood } from "./reference";
+import { categoryForGroup, getReferenceFood, autoMatchReference, type ReferenceFood } from "./reference";
 import type { FoodItem } from "@prisma/client";
 
 export type FoodIndex = { items: FoodItem[]; aliases: Map<string, string> };
@@ -46,11 +46,13 @@ export async function ensureFoodItem(name: string, tx: Tx = prisma, index?: Food
   const existing = await tx.foodItem.findUnique({ where: { name: clean } });
   if (existing) return existing;
   const unitDim = hint?.unit;
+  const ref = autoMatchReference(clean);
   const created = await tx.foodItem.create({
     data: {
       name: clean,
-      category: guessCategory(clean),
+      category: ref ? categoryForGroup(ref.group) : guessCategory(clean),
       defaultUnit: unitDim && ["g", "ml", "each"].includes(unitDim) ? unitDim : "g",
+      ...(ref ? autoNutrition(ref) : {}),
     },
   });
   idx.items.push(created);
@@ -92,4 +94,25 @@ export async function addAlias(foodItemId: string, alias: string, tx: Tx = prism
   const name = canonicalKey(alias);
   if (!name) return;
   await tx.ingredient.upsert({ where: { name }, create: { name, foodItemId }, update: { foodItemId } });
+}
+
+/** Nutrition copied from an automatically matched USDA entry (shown as "matched automatically" until confirmed). */
+function autoNutrition(ref: ReferenceFood) {
+  return {
+    usdaNdb: ref.ndb, kcalPer100g: ref.kcal, proteinPer100g: ref.protein, carbsPer100g: ref.carbs, fatPer100g: ref.fat, fibrePer100g: ref.fibre,
+    gramsPerMl: ref.gramsPerMl, gramsPerEach: ref.gramsPerEach, nutritionSource: "USDA_SR28", nutritionVerified: false,
+  };
+}
+
+/** Links every ingredient that has no nutrition yet to its USDA match, where there is a confident one. */
+export async function autoLinkUnlinkedFoods(tx: Tx = prisma) {
+  const foods = await tx.foodItem.findMany({ where: { nutritionSource: null } });
+  let linked = 0;
+  for (const f of foods) {
+    const ref = autoMatchReference(f.name);
+    if (!ref) continue;
+    await tx.foodItem.update({ where: { id: f.id }, data: { ...autoNutrition(ref), gramsPerMl: f.gramsPerMl ?? ref.gramsPerMl, gramsPerEach: f.gramsPerEach ?? ref.gramsPerEach } });
+    linked++;
+  }
+  return { linked, remaining: foods.length - linked };
 }

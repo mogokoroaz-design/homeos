@@ -9,6 +9,9 @@ import { loadFoodIndex, matchFood, type FoodIndex } from "./catalog";
 import { guessCategory } from "./categories";
 import { normalizeUnit } from "../units";
 import { titleCase } from "../utils";
+import { prisma } from "../db";
+import { getSetting } from "../settings";
+import { ocrLines, productFromLines, parseNutritionPanel, decodeBarcode, type NutritionPer100 } from "./label";
 
 export interface DetectedItem {
   name: string;
@@ -16,11 +19,25 @@ export interface DetectedItem {
   unit: string;
   location: "FRIDGE" | "FREEZER" | "PANTRY" | "OTHER";
   foodItemId: string | null;
-  source: "vision" | "label";
+  source: "vision" | "label" | "barcode";
   evidence?: string;
+  barcode?: string | null;
+  /** Per-100 g values read from a nutrition panel in this photo (reviewed before saving). */
+  nutrition?: NutritionPer100 | null;
+  /** The matched catalogue item already has nutrition. */
+  hasNutrition?: boolean;
+  /** A packaged product: worth photographing the back label. */
+  packaged?: boolean;
 }
 
-export interface PhotoResult { items: DetectedItem[]; method: "vision" | "label" | "none"; notes: string[] }
+export interface PhotoResult {
+  items: DetectedItem[];
+  method: "vision" | "label" | "barcode" | "nutrition" | "none";
+  notes: string[];
+  /** A barcode HomeOS doesn't know yet; it can be looked up on Open Food Facts if the person allows. */
+  barcode?: string | null;
+  barcodeLookup?: "ask" | "always" | "never";
+}
 
 const FRIDGE = new Set(["meat", "seafood", "dairy", "vegetable"]);
 export function locationFor(category: string): DetectedItem["location"] {
@@ -47,7 +64,7 @@ function qtyFrom(text: string): { quantity: number | null; unit: string } {
 function withCatalogue(index: FoodIndex, name: string, quantity: number | null, unit: string, source: DetectedItem["source"], evidence?: string): DetectedItem {
   const food = matchFood(index, name);
   const category = food?.category ?? guessCategory(name);
-  return { name: food?.name ?? titleCase(name), quantity, unit: quantity === null ? "each" : unit, location: locationFor(category), foodItemId: food?.id ?? null, source, evidence };
+  return { name: food?.name ?? titleCase(name), quantity, unit: quantity === null ? "each" : unit, location: locationFor(category), foodItemId: food?.id ?? null, source, evidence, hasNutrition: Boolean(food?.nutritionSource) };
 }
 
 function dedupe(items: DetectedItem[]) {
@@ -111,28 +128,58 @@ export function itemsFromVisionAnswer(raw: string, index: FoodIndex): DetectedIt
 export async function detectFoodInPhoto(image: Buffer, opts: { model?: AIProvider | null } = {}): Promise<PhotoResult> {
   const index = await loadFoodIndex();
   const notes: string[] = [];
+  const barcodeLookup = (await getSetting("food.barcodeLookup", "ask")) as PhotoResult["barcodeLookup"];
+
+  // 1. Barcode: exact when we've seen the product before.
+  const barcode = await decodeBarcode(image);
+  if (barcode) {
+    const known = await prisma.foodItem.findUnique({ where: { barcode } });
+    if (known) {
+      return { items: [{ name: known.name, quantity: null, unit: known.defaultUnit === "g" || known.defaultUnit === "ml" ? known.defaultUnit : "each", location: locationFor(known.category), foodItemId: known.id, source: "barcode", barcode, hasNutrition: Boolean(known.nutritionSource), packaged: true }], method: "barcode", notes: [`Barcode ${barcode} — you've added this product before.`], barcode: null, barcodeLookup };
+    }
+    notes.push(`Found barcode ${barcode}.`);
+  }
+
+  // 2. Local vision model (recognises loose produce and several items at once).
   const model = opts.model === undefined ? await getVisionModel() : opts.model;
   if (model) {
     try {
       const raw = await model.complete({
         system: "You list groceries in photos for a household pantry app. Reply with JSON only.",
-        prompt: 'List every food or grocery item you can see. Use short generic names (e.g. "Greek yogurt", "bananas", "eggs"). Count visible units, or read the size on the package (e.g. 500 g, 1 l). JSON: {"items":[{"name":string,"quantity":number|null,"unit":"each"|"g"|"kg"|"ml"|"l"}]}. Do not include furniture, bags or containers.',
+        prompt: 'List every food or grocery item you can see. Use short generic names (e.g. "Greek yogurt", "bananas", "eggs", "hoisin sauce"). Count visible units, or read the size printed on the package (e.g. 500 g, 1 l). JSON: {"items":[{"name":string,"quantity":number|null,"unit":"each"|"g"|"kg"|"ml"|"l"}]}. Do not include furniture, bags or containers.',
         images: [image.toString("base64")],
         json: true, maxTokens: 800, timeoutMs: 120_000,
       });
-      const items = itemsFromVisionAnswer(raw, index);
-      if (items.length) return { items, method: "vision", notes: [`Recognised by ${model.label} on this Mac. Counts are estimates — check them.`] };
-      notes.push("The local vision model didn't find any food items; tried reading labels instead.");
+      const items = itemsFromVisionAnswer(raw, index).map((it) => ({ ...it, barcode: barcode && itemsCount(raw) === 1 ? barcode : null }));
+      if (items.length) return { items, method: "vision", notes: [...notes, `Recognised by ${model.label} on this Mac. Counts are estimates — check them.`], barcode: items.length === 1 ? barcode : null, barcodeLookup };
+      notes.push("The local vision model didn't find any food items; tried reading the label instead.");
     } catch (e) {
-      notes.push(`The local vision model didn't respond (${e instanceof Error ? e.message : "error"}); tried reading labels instead.`);
+      notes.push(`The local vision model didn't respond (${e instanceof Error ? e.message : "error"}); tried reading the label instead.`);
     }
   }
+
+  // 3. Label reading (OCR at several sizes).
   try {
-    const { text } = await ocrImage(image);
-    const items = itemsFromLabelText(text, index);
-    if (items.length) {
-      return { items, method: "label", notes: [...notes, model ? "Read from product labels." : "Read from product labels with on-device OCR. To recognise loose fruit, veg and unlabelled items too, turn on a local vision model in Settings."] };
+    const { lines, text } = await ocrLines(image);
+    const panel = parseNutritionPanel(text);
+    // A list of several labelled products in one picture.
+    const listItems = itemsFromLabelText(lines.filter((l) => l.conf >= 55).map((l) => l.text).join("\n"), index).filter((i) => i.quantity !== null);
+    if (listItems.length >= 2 && !panel) return { items: listItems.map((i) => ({ ...i, packaged: true })), method: "label", notes: [...notes, "Read several product labels on this Mac."], barcode: null, barcodeLookup };
+    const product = productFromLines(lines, text);
+    if (product) {
+      const it = withCatalogue(index, product.name.toLowerCase(), product.quantity, product.unit, "label", product.evidence);
+      return { items: [{ ...it, barcode, nutrition: panel?.per100g ?? null, packaged: true }], method: "label", notes: [...notes, panel ? "Read the product name, size and nutrition panel on this Mac — check the numbers." : "Read from the label on this Mac. Snap the back of the pack to add its exact nutrition."], barcode, barcodeLookup };
+    }
+    if (panel) {
+      return { items: [{ name: "", quantity: null, unit: "each", location: "PANTRY", foodItemId: null, source: "label", barcode, nutrition: panel.per100g, packaged: true }], method: "nutrition", notes: [...notes, "This looks like a nutrition label — type the product's name (or snap the front) and the nutrition is saved with it."], barcode, barcodeLookup };
     }
   } catch { /* fall through */ }
-  return { items: [], method: "none", notes: [...notes, model ? "No food items found — add them below." : "No readable product labels found. Without a vision model HomeOS can only read printed labels; add items below, or turn on a local vision model in Settings to recognise loose items."] };
+  if (barcode) {
+    return { items: [{ name: "", quantity: null, unit: "each", location: "PANTRY", foodItemId: null, source: "barcode", barcode, packaged: true }], method: "barcode", notes: [...notes, "Couldn't read the name from the photo. Type it below, or look the barcode up."], barcode, barcodeLookup };
+  }
+  return { items: [], method: "none", notes: [...notes, model ? "No food items found — add them below." : "Couldn't read a product name. Try a closer, well-lit photo of the front (one product per photo), photograph the barcode, or add it below. A local vision model (Settings) also recognises loose fruit and veg."], barcode: null, barcodeLookup };
+}
+
+function itemsCount(raw: string) {
+  try { return (extractJson(raw) as { items?: unknown[] }).items?.length ?? 0; } catch { return 0; }
 }

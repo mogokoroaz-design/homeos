@@ -8,6 +8,8 @@ import { addDays, today, relativeDay, formatDate } from "@/lib/dates";
 import { formatQuantity } from "@/lib/units";
 import { formatCents } from "@/lib/money";
 import { Card, CardHeader, CardBody, Stat, LinkButton, Badge } from "@/components/ui";
+import { kitchenSuggestions } from "@/lib/food/suggest";
+import { SuggestionsView } from "@/components/food/kitchen-suggestions";
 
 export const metadata = { title: "Food Hub" };
 
@@ -18,9 +20,13 @@ export default async function FoodOverview() {
     getMealItems(d, addDays(d, 2)), expiringSoon(4), lowStock(), getActiveList(), prisma.recipe.count(), prisma.pantryItem.count({ where: { quantity: { gt: 0 } } }),
     prisma.pantryItem.count({ where: { quantity: { gt: 0 }, confidence: { not: "CONFIRMED" } } }),
   ]);
-  const grocery = await prisma.groceryItem.findMany({ where: { listId: list.id, checked: false } });
+  const [grocery, suggestions] = await Promise.all([prisma.groceryItem.findMany({ where: { listId: list.id, checked: false } }), kitchenSuggestions(viewer)]);
   return (
     <div className="space-y-5">
+      <Card>
+        <CardHeader title="Kitchen assistant" sub={suggestions.forNames.length ? `Based on what you added recently, your recipes and your targets` : "Based on your recipes, pantry and targets"} action={<LinkButton href="/food/assistant" size="sm" variant="ghost">Ask a question</LinkButton>} />
+        <CardBody>{suggestions.useIt.length || suggestions.ideas.length || suggestions.next.picks.length || suggestions.next.note ? <SuggestionsView s={suggestions} /> : <p className="text-sm text-muted">Add food to the pantry (photo, receipt or typing) and suggestions appear here.</p>}</CardBody>
+      </Card>
       <div className="grid gap-3 sm:grid-cols-4">
         <Card className="p-4"><Stat label="Recipes" value={recipeCount} /></Card>
         <Card className="p-4"><Stat label="Pantry items" value={pantryCount} sub={unverified ? `${unverified} unverified` : "all confirmed"} /></Card>

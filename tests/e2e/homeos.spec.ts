@@ -30,6 +30,10 @@ test("opens straight to the dashboard; switch people from the name menu; PINs ar
   await expect(page.getByRole("heading", { name: /Alex/ })).toBeVisible();
   await page.goto("/");
   await page.waitForURL("**/today");
+  // Idle timeout without a PIN: uploads (receipts, photos, Health) must reopen the profile, not say "unlock".
+  await page.context().clearCookies({ name: "homeos_session" });
+  const api = await page.evaluate(async () => { const r = await fetch("/api/pantry/photo", { method: "POST", body: new FormData() }); return { status: r.status, body: await r.json() }; });
+  expect(api).toEqual({ status: 400, body: { error: "Choose a photo" } });
   for (const [name, pin] of [["Alex", "1234"], ["Sam", "5678"]] as const) {
     // Pick the person from the name menu → their profile page.
     await page.getByRole("button", { name: /^Profile:/ }).click();
@@ -397,4 +401,41 @@ test("cook & dictate: voice builds the recipe, times it, and fills the shopping 
   await expect(page.getByText("Finely chop the onion garlic and chilli", { exact: true })).toBeVisible();
   await page.goto("/food/grocery");
   await expect(page.getByText(/thai basil/i).first()).toBeVisible();
+});
+
+test("pack photo: big headline + size, then the back label's nutrition is saved; kitchen assistant suggests uses", async ({ page, browser }, info) => {
+  const tag = info.project.name;
+  const shot = async (html: string, w: number, h: number) => { const ctx = await browser.newContext({ viewport: { width: w, height: h } }); const p = await ctx.newPage(); await p.setContent(html); const png = await p.screenshot(); await ctx.close(); return png; };
+  const front = await shot(`<body style="margin:0;background:#d8342c;color:#fff;font-family:Arial;padding:40px"><div style="font-size:36px">amazon saver</div><div style="font-size:150px;font-weight:bold;line-height:1.1">Sugar</div><div style="font-size:60px;color:#f5c542">Granulated</div><div style="font-size:32px;margin-top:120px">NET WT 4 LB (1.81 kg)</div></body>`, 900, 700);
+  const back = await shot(`<body style="margin:0;background:#fff;color:#000;font-family:Arial;padding:30px;font-size:30px;line-height:1.9"><b style="font-size:44px">Nutrition information</b><br>Typical values per 100g<br>Energy 1590kJ / 380kcal<br>Fat 9.5g<br>Carbohydrate 60g<br>Fibre 8g<br>Protein 11g</body>`, 700, 520);
+  await unlock(page, "Alex", "1234");
+  await page.goto("/food/pantry");
+  // Front of the pack → name and metric size from the label.
+  await page.getByTestId("food-photo-input").setInputFiles({ name: "front.png", mimeType: "image/png", buffer: front });
+  await expect(page.getByLabel("Item name").first()).toHaveValue(/sugar/i, { timeout: 90_000 });
+  await expect(page.getByLabel(/quantity$/).first()).toHaveValue("1.81");
+  // A different product: type its name, then read its nutrition panel from a photo of the back.
+  await page.getByRole("button", { name: "Different photo" }).click().catch(() => undefined);
+  await page.getByTestId("food-photo-input").setInputFiles({ name: "back.png", mimeType: "image/png", buffer: back });
+  await expect(page.getByLabel(/kcal$/).first()).toHaveValue("380", { timeout: 90_000 });
+  await page.getByLabel("Item name").first().fill(`Seed granola ${tag}`);
+  await page.getByLabel(/quantity$/).first().fill("500");
+  await page.getByLabel(/unit$/).first().selectOption("g");
+  await page.getByRole("button", { name: /^Add 1 item$/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: /1 added to the pantry/ })).toBeVisible();
+  await expect(page.getByRole("dialog").getByLabel("Kitchen assistant suggestions").or(page.getByRole("dialog").getByText("Kitchen assistant is looking")).first()).toBeVisible();
+  await page.goto(`/food/catalogue?q=${encodeURIComponent(`Seed granola ${tag}`)}`);
+  await expect(page.getByText("380 kcal/100 g")).toBeVisible();
+});
+
+test("kitchen assistant on the Food page suggests uses for what was just added", async ({ page }) => {
+  await unlock(page, "Alex", "1234");
+  await page.goto("/food/pantry");
+  await page.getByPlaceholder(/Tell me what changed/).fill("bought 1 kg all purpose flour");
+  await page.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("button", { name: "Approve" }).click();
+  await expect(page.getByText(/Added 1 kg/i)).toBeVisible();
+  await page.goto("/food");
+  await expect(page.getByText("Pancakes").first()).toBeVisible();
+  await expect(page.getByText("What to eat next")).toBeVisible();
 });

@@ -38,7 +38,10 @@ export interface DisplayQty { qty: number | null; unit: string; text: string; co
  * Metric: oz/lb → g/kg, cups/fl oz → ml (spoons are kept — they're used in metric recipes too).
  * Imperial: g → cups/spoons when the food's density is known, otherwise oz/lb; ml → cups/spoons.
  */
-export function displayQuantity(quantity: number | null, unit: string, factor: number, system: UnitSystem, food?: FoodConversion | null): DisplayQty {
+// Things US recipes measure in cups/spoons; everything else by weight stays a weight (oz / lb).
+const CUP_FOODS = /\b(flour|sugar|rice|oats?|cocoa|cornmeal|semolina|starch|cornstarch|salt|baking|yeast|spice|powder|honey|syrup|milk|yogh?urt|curd|cream|oil|ghee|butter|stock|broth|water|juice|sauce|vinegar|nuts|almonds|seeds|raisins|lentils|quinoa|couscous|breadcrumbs|chocolate chips|coconut|peas|corn|beans)\b/i;
+
+export function displayQuantity(quantity: number | null, unit: string, factor: number, system: UnitSystem, food?: (FoodConversion & { name?: string }) | null): DisplayQty {
   if (quantity === null) return { qty: null, unit, text: "", converted: false };
   const q = quantity * factor;
   const u = normalizeUnit(unit);
@@ -58,7 +61,7 @@ export function displayQuantity(quantity: number | null, unit: string, factor: n
     if (["tsp", "tbsp", "cup"].includes(u)) return done({ qty: nearest(q, u === "cup" ? 0.25 : u === "tbsp" ? 0.5 : 0.25), unit: u }, false);
     return done(niceVolume(base), true);
   }
-  if (food?.gramsPerMl && food.gramsPerMl > 0) return done(niceVolume(base / food.gramsPerMl), true);
+  if (food?.gramsPerMl && food.gramsPerMl > 0 && (!food.name || CUP_FOODS.test(food.name))) return done(niceVolume(base / food.gramsPerMl), true);
   if (["oz", "lb"].includes(u)) return done({ qty: Math.round(q * 100) / 100, unit: u }, false);
   if (base >= G.lb) return done({ qty: nearest(base / G.lb, 0.25), unit: "lb" }, true);
   return done({ qty: base / G.oz >= 10 ? Math.round(base / G.oz) : nearest(base / G.oz, 0.5), unit: "oz" }, true);

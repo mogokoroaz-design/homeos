@@ -35,3 +35,15 @@ describe("food photo — vision answers", () => {
     expect(locationFor("grain")).toBe("PANTRY");
   });
 });
+
+import { autoMatchReference } from "@/lib/food/reference";
+describe("automatic USDA matching", () => {
+  it.each([
+    ["sugar", /^Sugars, granulated/], ["soy sauce", /shoyu/], ["whole milk", /^Milk, whole/], ["tomato", /^Tomatoes, red, ripe, raw/],
+    ["minced chicken", /^Chicken, ground, raw/], ["all purpose flour", /^Wheat flour, white, all-purpose/], ["hoisin sauce", /hoisin/], ["green chilli", /hot chili, green/],
+  ])("%s", (name, re) => { expect(autoMatchReference(name)?.name).toMatch(re); });
+  it("leaves unknown or garbled names unlinked", () => {
+    expect(autoMatchReference("paneer")).toBeNull();
+    expect(autoMatchReference("Am Salt Nn Fail")).toBeNull();
+  });
+});

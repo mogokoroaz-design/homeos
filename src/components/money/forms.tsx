@@ -117,7 +117,7 @@ export function ReceiptUpload() {
       <p className="font-medium">Scan a receipt or bill</p>
       <p className="max-w-md text-sm text-muted">Take a photo or choose an image. Text is read on this Mac with open-source OCR; you review everything before it&apos;s saved. Card numbers are masked to the last 4 digits.</p>
       <button type="button" className={buttonClass("primary", "lg")} onClick={() => ref.current?.click()} disabled={busy}>{busy ? <><Loader2 className="h-4 w-4 animate-spin" />Reading receipt…</> : <><Camera className="h-4 w-4" />Photo or image</>}</button>
-      <input ref={ref} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onFile(f); e.target.value = ""; }} />
+      <input ref={ref} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onFile(f); e.target.value = ""; }} />
       {error ? <p className="text-sm text-danger">{error.msg} {error.dup ? <a className="underline" href={`/money/receipts/${error.dup}`}>Open it</a> : null}</p> : null}
     </div>
   );

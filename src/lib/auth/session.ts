@@ -56,8 +56,28 @@ export async function getViewer(): Promise<Viewer | null> {
 }
 
 /** For pages and server actions: redirects to the lock screen when no unlocked profile. */
+/**
+ * Reopens this device's profile after the idle timeout when it has no PIN — so uploads, server
+ * actions and API calls behave like pages do. Only works where cookies can be written (server
+ * actions and route handlers); in a page it returns null and the caller redirects via /open.
+ */
+async function reopenWithoutPin(): Promise<Viewer | null> {
+  const store = await cookies();
+  const profileId = await autoOpenProfile(store.get(LAST_PROFILE_COOKIE)?.value);
+  if (!profileId) return null;
+  const token = newToken();
+  try {
+    store.set(SESSION_COOKIE, token, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 30 * 86400 }); // throws while rendering a page
+  } catch {
+    return null;
+  }
+  store.set(LAST_PROFILE_COOKIE, profileId, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 365 * 86400 });
+  await prisma.userSession.create({ data: { profileId, tokenHash: sha256(token), expiresAt: new Date(Date.now() + 30 * 86400_000) } });
+  return resolveSessionToken(token);
+}
+
 export async function requireViewer(): Promise<Viewer> {
-  const viewer = await getViewer();
+  const viewer = (await getViewer()) ?? (await reopenWithoutPin());
   if (!viewer) {
     const household = await prisma.household.count();
     if (!household) redirect("/setup");
@@ -73,7 +93,7 @@ export class AuthError extends Error {}
 
 /** For API routes: throws instead of redirecting. */
 export async function requireApiViewer(): Promise<Viewer> {
-  const viewer = await getViewer();
+  const viewer = (await getViewer()) ?? (await reopenWithoutPin());
   if (!viewer) throw new AuthError("Profile locked");
   return viewer;
 }
