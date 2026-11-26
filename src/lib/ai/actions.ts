@@ -8,6 +8,7 @@ import { applyInventoryChanges, consumeFood } from "../food/pantry";
 import { addMeal } from "../food/mealplan";
 import { logPlannedMeal, logFood } from "../food/foodlog";
 import { ensureFoodItem } from "../food/catalog";
+import { checkMealIngredients } from "../food/meal-check";
 import { syncMealPlanGroceries, addGroceryItem } from "../food/grocery";
 import { saveRecipe, recipeInput } from "../food/recipes";
 import { createProjectFromDef } from "../projects/projects";
@@ -91,6 +92,8 @@ const EXECUTORS: { [K in ActionKind]: Exec<K> } = {
       mealId = item.id;
       out.push(`Added ${p.title} to ${when} in the meal plan`);
       if (p.recipeId && p.date >= today()) await syncMealPlanGroceries();
+      const check = p.recipeId ? await checkMealIngredients(item.id) : null;
+      if (check?.issues.length) out.push(`${check.issues.length} ingredient(s) aren't covered by the pantry (${check.issues.slice(0, 3).map((i) => i.name).join(", ")}${check.issues.length > 3 ? "…" : ""}) — they're on the shopping list; open the meal in the plan to mark any you already have`);
     }
     if (p.logEaten) {
       try {

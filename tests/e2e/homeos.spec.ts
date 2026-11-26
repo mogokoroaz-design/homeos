@@ -87,6 +87,13 @@ test("recipe → meal plan with per-person portions → grocery list", async ({ 
 
   await page.getByRole("button", { name: "Plan" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Add to plan" }).click();
+  // Kitchen assistant checks the ingredients: buy, or "I have it".
+  const checkPanel = page.getByRole("dialog").getByLabel("Ingredient check");
+  await expect(checkPanel).toBeVisible();
+  await expect(checkPanel.getByText(/Kitchen assistant:/)).toBeVisible();
+  const lemon = checkPanel.getByRole("radiogroup", { name: /Lemon: buy or have/ });
+  if (await lemon.count()) await lemon.getByRole("radio", { name: "I have it" }).click();
+  await checkPanel.getByRole("button", { name: "Done" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
   await page.goto("/food/plan");
   // Compact card shows just the name; details open on click.
@@ -97,7 +104,7 @@ test("recipe → meal plan with per-person portions → grocery list", async ({ 
   const details = page.getByRole("dialog", { name });
   await expect(details.getByLabel("Alex servings")).toBeVisible();
   await expect(details.getByLabel("Sam servings")).toBeVisible();
-  await expect(details.getByText("Still to buy for this meal")).toBeVisible();
+  await expect(details.getByLabel("Ingredient check").or(details.getByText(/You have everything/))).toBeVisible();
   await expect(details.getByRole("link", { name: "Open recipe →" })).toBeVisible();
   await page.keyboard.press("Escape");
   await page.goto("/food/grocery");

@@ -70,3 +70,24 @@ describe("assistant: add to a meal", () => {
     expect(await prisma.pantryItem.count()).toBe(before);
   });
 });
+
+import { addMeal } from "@/lib/food/mealplan";
+import { checkMealIngredients } from "@/lib/food/meal-check";
+describe("ingredient check when planning a meal", () => {
+  it("separates never-recorded, ran-out and not-enough; ignores water; spices you have are fine", async () => {
+    await applyInventoryChanges([{ action: "ADD", name: "ghee", quantity: 50, unit: "g" }, { action: "ADD", name: "red lentils", quantity: 100, unit: "g" }, { action: "ADD", name: "cumin seeds", quantity: 20, unit: "g" }], alex.profileId);
+    await applyInventoryChanges([{ action: "CONSUME", name: "ghee", quantity: 50, unit: "g" }], alex.profileId);
+    const recipe = await saveRecipe(recipeInput.parse({ name: "Dal tadka", servings: 2, ingredients: [
+      { name: "red lentils", quantity: 200, unit: "g" }, { name: "ghee", quantity: 1, unit: "tbsp" }, { name: "cumin seeds", quantity: 1, unit: "tsp" },
+      { name: "asafoetida", quantity: 0.25, unit: "tsp" }, { name: "water", quantity: 3, unit: "cup" },
+    ] }), alex);
+    const meal = await addMeal({ date: today(), slot: "DINNER", recipeId: recipe.id, servings: Object.fromEntries((await prisma.householdProfile.findMany()).map((p) => [p.id, p.id === alex.profileId ? 2 : 0])) }, alex);
+    const c = (await checkMealIngredients(meal.id))!;
+    const by = Object.fromEntries(c.issues.map((i) => [i.name, i]));
+    expect(by["asafoetida"]).toMatchObject({ status: "unrecorded", buyText: "1 pack" });
+    expect(by["ghee"]).toMatchObject({ status: "out" });
+    expect(by["red lentils"]).toMatchObject({ status: "short", haveText: "100 g" });
+    expect(by["water"]).toBeUndefined();
+    expect(by["cumin seeds"]).toBeUndefined(); // have some → no need to buy a spice
+  });
+});

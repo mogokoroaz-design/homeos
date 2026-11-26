@@ -7,6 +7,7 @@ import { ActionCard } from "../assistant/action-card";
 import { Badge, Button, Input, Select } from "../ui";
 import { setServingAction, deleteMealAction, setMealStatusAction, proposeCookedAction, substitutesAction, substituteMealAction, moveMealAction } from "@/app/(app)/food/actions";
 import { cn } from "@/lib/utils";
+import { MealCheckLoader } from "./meal-check";
 
 export interface MealCardData {
   id: string; title: string; slot: string; date: string; status: string; recipeId: string | null; isLeftover: boolean; cookTime: string | null; prepNote: string;
@@ -62,13 +63,7 @@ export function MealCard({ meal }: { meal: MealCardData }) {
             </div>
             <p className="mt-1 text-xs text-faint">{totalServings} serving{totalServings === 1 ? "" : "s"} in total. Changing a number updates the shopping list.</p>
           </div>
-          {meal.status === "PLANNED" && meal.missing?.length ? (
-            <div className="rounded-xl bg-surface-2 p-3">
-              <p className="mb-1 font-medium">Still to buy for this meal</p>
-              <p className="text-muted">{meal.missing.join(", ")}</p>
-              <Link href="/food/grocery" className="mt-1 inline-block text-xs text-info hover:underline">Already on your shopping list →</Link>
-            </div>
-          ) : meal.status === "PLANNED" && meal.recipeId ? <p className="text-xs text-accent">You have everything for this meal.</p> : null}
+          {meal.status === "PLANNED" && meal.recipeId ? <div className="border-t border-line pt-3"><MealCheckLoader mealId={meal.id} /></div> : null}
           <div className="grid grid-cols-2 gap-2 border-t border-line pt-3 sm:grid-cols-3">
             {meal.status !== "COOKED" ? <Button size="sm" variant="secondary" className="justify-start" onClick={() => start(async () => { const r = await proposeCookedAction(meal.id); if (!r.ok) setError(r.error); else if (r.data?.actionId) { setCook({ actionId: r.data.actionId, preview: r.data.preview }); setOpen(false); } })}><CookingPot className="h-4 w-4" />Cooked</Button> : null}
             {meal.status === "PLANNED" ? <Button size="sm" variant="ghost" className="justify-start" onClick={() => start(async () => { await setMealStatusAction(fd({ id: meal.id, status: "SKIPPED" })); setOpen(false); })}><SkipForward className="h-4 w-4" />Skip</Button> : <Button size="sm" variant="ghost" className="justify-start" onClick={() => start(async () => { await setMealStatusAction(fd({ id: meal.id, status: "PLANNED" })); setOpen(false); })}><RotateCcw className="h-4 w-4" />Re-plan</Button>}

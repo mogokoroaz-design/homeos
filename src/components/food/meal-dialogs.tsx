@@ -4,14 +4,25 @@ import { ActionForm, SubmitButton } from "../forms";
 import { Field, Input, Select } from "../ui";
 import { addMealAction } from "@/app/(app)/food/actions";
 import { CalendarPlus, Plus } from "lucide-react";
+import { useState } from "react";
+import { MealCheckPanel } from "./meal-check";
+import type { MealCheck } from "@/lib/food/meal-check";
 
 export function AddMealDialog({ recipes, profiles, date, slot, recipeId, label = "Add meal", variant = "secondary", size = "md", iconOnly }: {
   recipes: { id: string; name: string }[]; profiles: { id: string; name: string }[]; date: string; slot?: string; recipeId?: string; label?: string; variant?: "secondary" | "primary" | "ghost" | "outline"; size?: "sm" | "md"; iconOnly?: boolean;
 }) {
   return (
     <DialogButton label={iconOnly ? <Plus className="h-4 w-4" /> : label} icon={iconOnly ? undefined : <CalendarPlus className="h-4 w-4" />} title="Add to meal plan" variant={variant} size={iconOnly ? "iconSm" : size}>
-      {(close) => (
-        <ActionForm action={addMealAction} onSuccess={close} className="grid grid-cols-2 gap-3">
+      {(close) => <AddMealForm close={close} recipes={recipes} profiles={profiles} date={date} slot={slot} recipeId={recipeId} />}
+    </DialogButton>
+  );
+}
+
+function AddMealForm({ close, recipes, profiles, date, slot, recipeId }: { close: () => void; recipes: { id: string; name: string }[]; profiles: { id: string; name: string }[]; date: string; slot?: string; recipeId?: string }) {
+  const [check, setCheck] = useState<MealCheck | null>(null);
+  if (check) return <MealCheckPanel check={check} onDone={close} />;
+  return (
+        <ActionForm action={addMealAction} onSuccess={(r) => { const c = r.ok ? (r.data as { check: MealCheck | null } | undefined)?.check : null; if (c) setCheck(c); else close(); }} className="grid grid-cols-2 gap-3">
           <Field label="Date"><Input type="date" name="date" defaultValue={date} required /></Field>
           <Field label="Meal"><Select name="slot" defaultValue={slot ?? "DINNER"}><option value="BREAKFAST">Breakfast</option><option value="LUNCH">Lunch</option><option value="DINNER">Dinner</option><option value="SNACK">Snack</option></Select></Field>
           <Field label="Recipe" className="col-span-2"><Select name="recipeId" defaultValue={recipeId ?? ""}><option value="">— No recipe (enter a name) —</option>{recipes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</Select></Field>
@@ -23,7 +34,5 @@ export function AddMealDialog({ recipes, profiles, date, slot, recipeId, label =
           <Field label="Notes" className="col-span-2"><Input name="notes" /></Field>
           <div className="col-span-2 flex justify-end"><SubmitButton>Add to plan</SubmitButton></div>
         </ActionForm>
-      )}
-    </DialogButton>
   );
 }

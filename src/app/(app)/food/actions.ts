@@ -20,6 +20,7 @@ import { parseMoneyToCents } from "@/lib/money";
 import { parseIngredientLine } from "@/lib/food/parse";
 import { sectionFor, categoryForSection } from "@/lib/food/sections";
 import { lookupOpenFoodFacts } from "@/lib/food/label";
+import { checkMealIngredients, type MealCheck } from "@/lib/food/meal-check";
 import { kitchenSuggestions } from "@/lib/food/suggest";
 import { setSetting } from "@/lib/settings";
 import { ensureFoodItem, loadFoodIndex } from "@/lib/food/catalog";
@@ -100,7 +101,7 @@ export async function findByBarcodeAction(code: string) {
 }
 
 // ── Meal plan ──
-export async function addMealAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+export async function addMealAction(_: ActionResult | null, fd: FormData): Promise<ActionResult<{ check: MealCheck | null }>> {
   const viewer = await requireViewer();
   return run(async () => {
     const profiles = await prisma.householdProfile.findMany({ where: { householdId: viewer.householdId } });
@@ -109,13 +110,33 @@ export async function addMealAction(_: ActionResult | null, fd: FormData): Promi
       const v = fd.get(`serv_${p.id}`);
       if (v !== null && v !== "") servings[p.id] = Number(v);
     }
-    await addMeal({
+    const meal = await addMeal({
       date: dateString.parse(fd.get("date")), slot: slot.parse(fd.get("slot")), recipeId: String(fd.get("recipeId") || "") || null, title: String(fd.get("title") ?? ""),
       notes: String(fd.get("notes") ?? ""), cookTime: timeString.parse(fd.get("cookTime")), prepNote: String(fd.get("prepNote") ?? ""),
       servings: Object.keys(servings).length ? servings : undefined, leftoverServings: num.parse(fd.get("leftovers")) ?? 0,
     }, viewer);
     await syncMealPlanGroceries();
-  }, "Meal added — shopping list updated");
+    return { check: await checkMealIngredients(meal.id) };
+  }, "Meal added");
+}
+
+/** "I have it": records ingredients in the pantry (as estimated) so they stop showing as missing. */
+export async function confirmHaveIngredientsAction(items: { name: string; foodItemId: string | null; need: number | null; unit: string }[]): Promise<ActionResult<{ count: number }>> {
+  const viewer = await requireViewer();
+  return run(async () => {
+    const list = z.array(z.object({ name: z.string().min(1).max(160), foodItemId: z.string().nullable(), need: z.number().positive().nullable(), unit: z.string().max(30) })).max(60).parse(items);
+    if (list.length) {
+      await applyInventoryChanges(list.map((i) => ({ action: "ADD" as const, name: i.name, foodItemId: i.foodItemId, quantity: i.need ?? 1, unit: i.need === null ? "each" : i.unit || "each", confidence: "ESTIMATED" as const })), viewer.profileId, { type: "meal-check", id: "plan" });
+      await syncMealPlanGroceries();
+    }
+    return { count: list.length };
+  }, (r) => (r.count ? `Recorded ${r.count} item${r.count === 1 ? "" : "s"} in the pantry` : "Done"));
+}
+
+/** Same check for a meal that's already planned (opened from the meal plan). */
+export async function mealCheckAction(mealId: string) {
+  await requireViewer();
+  return checkMealIngredients(mealId);
 }
 export async function setServingAction(fd: FormData) {
   await requireViewer();
