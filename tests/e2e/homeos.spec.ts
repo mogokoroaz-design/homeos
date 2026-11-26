@@ -101,7 +101,10 @@ test("recipe → meal plan with per-person portions → grocery list", async ({ 
   await expect(details.getByRole("link", { name: "Open recipe →" })).toBeVisible();
   await page.keyboard.press("Escape");
   await page.goto("/food/grocery");
-  await expect(page.getByText("Spaghetti", { exact: true }).first()).toBeVisible();
+  // Shopping amounts, not recipe crumbs: olive oil is bought as a pack, with the recipe amount noted.
+  const oil = page.locator("li", { hasText: "Olive Oil" }).first();
+  await expect(oil).toContainText("1 pack");
+  await expect(oil).toContainText(/for Lemon pasta .*recipe uses/);
 });
 
 test("conversational pantry entry is previewed then approved", async ({ page }) => {
@@ -295,7 +298,18 @@ test("shopping list is grouped by store section and sections can be reordered", 
   await page.goto("/food/grocery");
   await page.getByPlaceholder("Add item…").fill("bananas");
   await page.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Fruit & veg" })).toBeVisible();
+  await expect(page.getByText("Fruit & veg", { exact: true }).first()).toBeVisible();
+  // Edit dialog: amount, unit, aisle, price — one place, clearly labelled.
+  await page.getByRole("button", { name: /^Edit Banana/ }).first().click();
+  const edit = page.getByRole("dialog", { name: /Banana/ });
+  await edit.getByLabel("Amount to buy").fill("6");
+  await edit.getByLabel("Price paid (optional)").fill("2.40");
+  await edit.getByRole("button", { name: "Save" }).click();
+  await expect(edit).toBeHidden();
+  const banana = page.locator("li", { hasText: "Banana" }).first();
+  await expect(banana).toContainText("Banana6");
+  await expect(banana).toContainText("$2.40");
+  await page.getByText(/^More: meal-plan dates/).click();
   const first = async () => (await page.getByRole("list", { name: "Store layout" }).locator("[data-section]").first().textContent())?.trim();
   const before = await first();
   await page.getByRole("button", { name: `Move ${before} down` }).click();

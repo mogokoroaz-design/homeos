@@ -18,6 +18,7 @@ import { proposeMealPlan, parsePlanRequest } from "@/lib/food/planner";
 import { importFromUrl, importFromText, reextractImport } from "@/lib/food/importer";
 import { parseMoneyToCents } from "@/lib/money";
 import { parseIngredientLine } from "@/lib/food/parse";
+import { sectionFor, categoryForSection } from "@/lib/food/sections";
 import { lookupOpenFoodFacts } from "@/lib/food/label";
 import { kitchenSuggestions } from "@/lib/food/suggest";
 import { setSetting } from "@/lib/settings";
@@ -454,4 +455,18 @@ export async function kitchenBubbleAction() {
     prisma.inventoryTransaction.findFirst({ where: { delta: { gt: 0 }, reason: { in: ["PURCHASE", "RECEIPT", "SHOPPING", "ADJUST"] }, createdAt: { gte: new Date(Date.now() - 3 * 86400_000) } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
   return { s, latest: latest?.createdAt.toISOString() ?? null };
+}
+
+/** One edit for a shopping-list item: amount, unit, aisle and (optionally) what was paid. */
+export async function updateGroceryItemAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  await requireViewer();
+  return run(async () => {
+    const it = await prisma.groceryItem.findUniqueOrThrow({ where: { id: String(fd.get("id")) }, include: { foodItem: true } });
+    const quantity = num.parse(fd.get("quantity"));
+    const unit = String(fd.get("unit") || it.unit);
+    const price = String(fd.get("price") ?? "").trim();
+    await prisma.groceryItem.update({ where: { id: it.id }, data: { quantity: quantity && quantity > 0 ? quantity : it.quantity, unit, actualPriceCents: price ? parseMoneyToCents(price) : null } });
+    const section = String(fd.get("section") ?? "");
+    if (section && it.foodItemId && section !== sectionFor(it.foodItem?.category)) await prisma.foodItem.update({ where: { id: it.foodItemId }, data: { category: categoryForSection(section) } });
+  }, "Saved");
 }

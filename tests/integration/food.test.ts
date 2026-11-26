@@ -96,7 +96,8 @@ describe("meal plan → portions → groceries → pantry (acceptance 5–8)", (
     const list = await getActiveList();
     let items = await prisma.groceryItem.findMany({ where: { listId: list.id } });
     const chicken = items.find((i) => i.name === "Chicken thigh")!;
-    expect(chicken.quantity).toBe(300);
+    expect(chicken).toMatchObject({ quantity: 500, unit: "g" }); // needs 300 g → buy a normal 500 g pack
+    expect(chicken.packageNote).toMatch(/recipe uses 300 g/);
     expect(chicken.estimatedPriceCents).toBe(649); // one 500 g pack
     expect(items.find((i) => i.name === "Spinach")).toBeUndefined();
 
@@ -104,7 +105,7 @@ describe("meal plan → portions → groceries → pantry (acceptance 5–8)", (
     await setServing(meal.id, alex.profileId, 4); // 6 servings → 1200 g chicken
     await syncMealPlanGroceries();
     items = await prisma.groceryItem.findMany({ where: { listId: list.id } });
-    expect(items.find((i) => i.name === "Chicken thigh")!.quantity).toBe(700);
+    expect(items.find((i) => i.name === "Chicken thigh")).toMatchObject({ quantity: 1, unit: "kg" }); // needs 700 g
     expect(items.find((i) => i.name === "Chicken thigh")!.estimatedPriceCents).toBe(1298); // two packs
 
     const first = await addGroceryItem({ name: "milk", quantity: 1, unit: "l" });

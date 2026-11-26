@@ -11,6 +11,7 @@ import { Card, CardHeader, CardBody, LinkButton, Badge, buttonClass } from "@/co
 import { InlineAction } from "@/components/forms";
 import { MealCard } from "@/components/food/meal-card";
 import { pantryByFood } from "@/lib/food/pantry";
+import { shoppingAmount } from "@/lib/food/shop-units";
 import { checkRecipeAgainstPantry } from "@/lib/food/recipes";
 import { AddMealDialog } from "@/components/food/meal-dialogs";
 import { PlanAssistant } from "@/components/food/plan-assistant";
@@ -68,7 +69,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
     const e = await estimatePrice(r.food, r.toBuy, r.unit);
     if (e) est += e.cents; else unpriced++;
   }
-  const toBuy = reqs.filter((r) => r.toBuy === null || r.toBuy > 0).length;
+  const toBuy = reqs.filter((r) => (r.toBuy === null || r.toBuy > 0) && !shoppingAmount(r.name, r.toBuy, r.unit, r.food, r.pantryConfidence !== "—").skip).length;
   // What each planned meal still needs (shown when a meal is opened).
   const stock = await pantryByFood();
   const missing = new Map<string, string[]>();

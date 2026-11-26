@@ -29,11 +29,11 @@ export function Dialog({ open, onClose, title, children, wide }: { open: boolean
 }
 
 /** Button that opens a dialog; children receive a close() callback. */
-export function DialogButton({ label, title, children, variant = "secondary", size = "md", className, wide, icon }: { label: ReactNode; title: ReactNode; children: (close: () => void) => ReactNode; variant?: ButtonVariant; size?: ButtonSize; className?: string; wide?: boolean; icon?: ReactNode }) {
+export function DialogButton({ label, title, children, variant = "secondary", size = "md", className, wide, icon, "aria-label": ariaLabel }: { label: ReactNode; title: ReactNode; children: (close: () => void) => ReactNode; variant?: ButtonVariant; size?: ButtonSize; className?: string; wide?: boolean; icon?: ReactNode; "aria-label"?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className={buttonClass(variant, size, className)} onClick={() => setOpen(true)}>{icon}{label}</button>
+      <button type="button" className={buttonClass(variant, size, className)} aria-label={ariaLabel} title={ariaLabel} onClick={() => setOpen(true)}>{icon}{label}</button>
       <Dialog open={open} onClose={() => setOpen(false)} title={title} wide={wide}>{children(() => setOpen(false))}</Dialog>
     </>
   );

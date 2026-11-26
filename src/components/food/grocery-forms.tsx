@@ -8,7 +8,7 @@ import { ShoppingBag, RefreshCw } from "lucide-react";
 
 export function CompleteShopping({ listId, checkedCount, actualTotal, profiles, viewerId, stores }: { listId: string; checkedCount: number; actualTotal: string; profiles: { id: string; name: string }[]; viewerId: string; stores: string[] }) {
   return (
-    <DialogButton label={`Finish shopping (${checkedCount})`} icon={<ShoppingBag className="h-4 w-4" />} title="Record this shopping trip" variant="primary">
+    <DialogButton label={`Done shopping (${checkedCount})`} icon={<ShoppingBag className="h-4 w-4" />} title="Record this shopping trip" variant="primary">
       {(close) => (
         <ActionForm action={completeShoppingAction} onSuccess={close} className="grid grid-cols-2 gap-3">
           <input type="hidden" name="listId" value={listId} />

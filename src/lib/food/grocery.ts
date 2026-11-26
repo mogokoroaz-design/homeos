@@ -1,4 +1,5 @@
 import { isFreeStaple } from "./staples";
+import { shoppingAmount } from "./shop-units";
 import { prisma, type Tx } from "../db";
 import { convert, normalizeUnit, toBase, dimensionOf, packagesNeeded, formatQuantity } from "../units";
 import { availabilityFrom, pantryByFood, addToPantry } from "./pantry";
@@ -136,12 +137,14 @@ export async function syncMealPlanGroceries(range?: { from: string; to: string }
     const keep = new Set<string>();
     for (const req of reqs) {
       if (req.toBuy !== null && req.toBuy <= 1e-6) continue;
+      // What you'd actually buy: a pack of spice, 1 cauliflower, 500 g chicken — not recipe crumbs.
+      const shop = shoppingAmount(req.name, req.toBuy, req.unit, req.food, req.pantryConfidence !== "—");
+      if (shop.skip) continue;
       const sourceKey = `meal:${req.key}`;
       keep.add(sourceKey);
-      const qty = req.toBuy === null ? 0 : round(req.toBuy, 2);
-      const est = req.toBuy === null ? null : await estimatePrice(req.food, qty, req.unit, tx);
+      const est = await estimatePrice(req.food, shop.quantity, shop.unit, tx);
       const found = existing.find((e) => e.sourceKey === sourceKey);
-      const data = { name: req.name, foodItemId: req.foodItemId, quantity: qty, unit: req.unit, estimatedPriceCents: est?.cents ?? null, packageNote: [est?.packageNote, `for ${req.recipes.slice(0, 3).join(", ")}`].filter(Boolean).join(" · "), storeId: est?.storeId ?? null };
+      const data = { name: req.name, foodItemId: req.foodItemId, quantity: shop.quantity, unit: shop.unit, estimatedPriceCents: est?.cents ?? null, packageNote: [`for ${req.recipes.slice(0, 3).join(", ")}`, shop.recipeUses ? `recipe uses ${shop.recipeUses}` : "", est?.packageNote].filter(Boolean).join(" · "), storeId: est?.storeId ?? null };
       if (found) {
         if (!found.checked) await tx.groceryItem.update({ where: { id: found.id }, data });
       } else {
