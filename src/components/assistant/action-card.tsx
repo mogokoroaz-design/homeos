@@ -54,6 +54,7 @@ function initialPayload(kind: string, preview: unknown): unknown {
 }
 
 function resultText(data: unknown) {
+  if (Array.isArray(data) && data.every((d) => typeof d === "string")) return `${(data as string[]).join("; ")}.`.replace(/^./, (c) => c.toUpperCase());
   if (Array.isArray(data)) return data.map((d) => (typeof d === "string" ? d : (d as { name?: string; consumed?: number; unit?: string; shortfall?: number }).name ? `${(d as { name: string }).name}: −${(d as { consumed: number }).consumed} ${(d as { unit: string }).unit}` : JSON.stringify(d))).join(" · ");
   if (data && typeof data === "object" && "added" in (data as object)) return `Added ${(data as { added: number }).added} meals. Shopping list updated.`;
   if (data && typeof data === "object" && "id" in (data as object)) return "Created.";
@@ -76,6 +77,17 @@ function Preview({ kind, preview, edited, setEdited }: { kind: string; preview: 
           </li>
         ))}
       </ul>
+    );
+  }
+  if (kind === "MEAL_ADD") {
+    const m = edited as { date: string; slot: string; title: string; who: string; addToPlan: boolean; logEaten: boolean; food: { name: string; quantity: number; unit: string } | null; recipeId: string | null };
+    const toggle = (k: "addToPlan" | "logEaten") => setEdited?.({ ...m, [k]: !m[k] });
+    return (
+      <div className="space-y-2">
+        <p><span className="font-medium">{m.title}</span> <span className="text-muted">· {m.slot.toLowerCase()} · {formatDate(m.date, { weekday: true })} · {m.who === "me" ? "just you" : "everyone"}</span></p>
+        <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-[#9cc2b0]" checked={m.addToPlan} disabled={!setEdited} onChange={() => toggle("addToPlan")} />Add to the meal plan</label>
+        <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-[#9cc2b0]" checked={m.logEaten} disabled={!setEdited || (!m.food && !m.recipeId)} onChange={() => toggle("logEaten")} />Log as eaten (counts towards today’s calories){!m.food && !m.recipeId ? <span className="text-xs text-faint"> — needs an amount</span> : null}</label>
+      </div>
     );
   }
   if (kind === "GROCERY_ADD") {

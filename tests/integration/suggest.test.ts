@@ -52,3 +52,21 @@ describe("proactive kitchen assistant", () => {
     expect(await recentAdditions()).toEqual(expect.arrayContaining(["All Purpose Flour", "Chicken Breast"]));
   });
 });
+
+import { handleMessage } from "@/lib/ai/assistant";
+import { executeAction } from "@/lib/ai/actions";
+describe("assistant: add to a meal", () => {
+  it("'add 1 cup plain boiled rice to my lunch today' → meal plan for me (+ log), not the pantry", async () => {
+    const before = await prisma.pantryItem.count();
+    const res = await handleMessage(alex, { text: "add 1 cup plain boiled rice to my lunch today", surface: "KITCHEN" });
+    const card = (res as unknown as { message: { cards: { type: string; actionId: string; kind: string; preview: { logEaten: boolean } }[] } }).message.cards.find((c) => c.type === "action")!;
+    expect(card.kind).toBe("MEAL_ADD");
+    await executeAction(alex, card.actionId, { ...card.preview, logEaten: true });
+    const meal = await prisma.mealPlanItem.findFirstOrThrow({ where: { date: today(), slot: "LUNCH", title: { contains: "Boiled rice" } }, include: { servings: true } });
+    expect(meal.servings.map((s) => s.profileId)).toEqual([alex.profileId]); // "my" lunch → only Alex
+    const log = await prisma.foodLogItem.findFirstOrThrow({ where: { foodLog: { profileId: alex.profileId, date: today() }, slot: "LUNCH" } });
+    expect(log.kcal).toBeGreaterThan(150); // ~1 cup cooked white rice ≈ 200 kcal
+    expect(log.kcal).toBeLessThan(260);
+    expect(await prisma.pantryItem.count()).toBe(before);
+  });
+});

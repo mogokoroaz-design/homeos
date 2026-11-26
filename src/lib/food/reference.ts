@@ -72,7 +72,7 @@ const KITCHEN_NAMES: Record<string, string> = {
   chilli: "peppers hot chili red raw", chili: "peppers hot chili red raw", "red chilli": "peppers hot chili red raw", "green chilli": "peppers hot chili green raw", "green chili": "peppers hot chili green raw",
   "chilli flakes": "spices pepper red or cayenne", "chilli powder": "spices chili powder",
   "basmati rice": "rice white long-grain regular raw enriched", rice: "rice white long-grain regular raw enriched", "jasmine rice": "rice white long-grain regular raw enriched", "brown rice": "rice brown long-grain raw",
-  ghee: "butter oil anhydrous", "thai basil": "basil fresh", "holy basil": "basil fresh",
+  ghee: "butter oil anhydrous", "boiled rice": "rice white long-grain regular enriched cooked", "cooked rice": "rice white long-grain regular enriched cooked", "steamed rice": "rice white long-grain regular enriched cooked", "plain rice": "rice white long-grain regular enriched cooked", "thai basil": "basil fresh", "holy basil": "basil fresh",
   milk: "milk whole 3.25%", "whole milk": "milk whole 3.25%", "skim milk": "milk nonfat fluid", "semi skimmed milk": "milk reduced fat 2%",
   tomato: "tomatoes red ripe raw year round", "cherry tomato": "tomatoes red ripe raw year round", "chopped tomato": "tomatoes red ripe canned packed in tomato juice",
   "chicken thigh": "chicken broilers or fryers thigh meat only raw", "chicken breast": "chicken broilers or fryers breast meat only raw", chicken: "chicken broilers or fryers meat only raw",

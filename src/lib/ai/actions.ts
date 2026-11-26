@@ -6,6 +6,8 @@ import { prisma } from "../db";
 import type { Viewer } from "../auth/session";
 import { applyInventoryChanges, consumeFood } from "../food/pantry";
 import { addMeal } from "../food/mealplan";
+import { logPlannedMeal, logFood } from "../food/foodlog";
+import { ensureFoodItem } from "../food/catalog";
 import { syncMealPlanGroceries, addGroceryItem } from "../food/grocery";
 import { saveRecipe, recipeInput } from "../food/recipes";
 import { createProjectFromDef } from "../projects/projects";
@@ -32,6 +34,12 @@ export const ACTION_SCHEMAS = {
   NUTRITION_TARGETS: z.object({ profileId: z.string(), kcal: z.number().positive(), protein: z.number().min(0), carbs: z.number().min(0), fat: z.number().min(0), fibre: z.number().min(0), method: z.string() }),
   RECIPE_SAVE: z.object({ recipe: recipeInput }),
   PROJECT_CREATE: z.object({ def: projectDef }),
+  MEAL_ADD: z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), slot: z.enum(["BREAKFAST", "LUNCH", "DINNER", "SNACK"]), title: z.string().min(1).max(160),
+    recipeId: z.string().nullable(), who: z.enum(["me", "everyone"]), servings: z.number().positive().max(50).nullable(),
+    food: z.object({ name: z.string().min(1), quantity: z.number().positive(), unit: z.string() }).nullable(),
+    addToPlan: z.boolean(), logEaten: z.boolean(),
+  }),
 } as const;
 export type ActionKind = keyof typeof ACTION_SCHEMAS;
 
@@ -72,6 +80,30 @@ type Exec<K extends ActionKind> = (viewer: Pick<Viewer, "profileId" | "household
 
 const EXECUTORS: { [K in ActionKind]: Exec<K> } = {
   PANTRY_UPDATE: async (v, p) => applyInventoryChanges(p.changes, v.profileId, { type: "assistant", id: "chat" }),
+  MEAL_ADD: async (v, p) => {
+    const out: string[] = [];
+    let mealId: string | null = null;
+    const when = `${p.slot.toLowerCase()} on ${p.date === today() ? "today" : p.date}`;
+    if (p.addToPlan) {
+      const profiles = await prisma.householdProfile.findMany({ where: { householdId: v.householdId }, select: { id: true } });
+      const servings = p.who === "me" ? Object.fromEntries(profiles.map((pr) => [pr.id, pr.id === v.profileId ? (p.servings ?? 1) : 0])) : undefined;
+      const item = await addMeal({ date: p.date, slot: p.slot, recipeId: p.recipeId, title: p.title, servings }, v);
+      mealId = item.id;
+      out.push(`Added ${p.title} to ${when} in the meal plan`);
+      if (p.recipeId && p.date >= today()) await syncMealPlanGroceries();
+    }
+    if (p.logEaten) {
+      try {
+        if (p.recipeId && mealId) await logPlannedMeal(v, mealId);
+        else if (p.food) { const f = await ensureFoodItem(p.food.name); await logFood(v, { date: p.date, slot: p.slot, foodItemId: f.id, quantity: p.food.quantity, unit: p.food.unit }); }
+        else throw new Error("no amount given");
+        out.push("logged as eaten (Nutrition)");
+      } catch (e) {
+        out.push(`not logged as eaten: ${e instanceof Error ? e.message : "error"}`);
+      }
+    }
+    return out;
+  },
   MEAL_PLAN: async (v, p) => {
     await prisma.$transaction(async (tx) => {
       for (const m of p.meals) await addMeal({ date: m.date, slot: m.slot, recipeId: m.recipeId }, v, tx);

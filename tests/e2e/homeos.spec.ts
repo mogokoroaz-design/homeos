@@ -460,3 +460,15 @@ test("kitchen assistant on the Food page suggests uses for what was just added",
   await expect(page.getByRole("button", { name: "Kitchen assistant" })).toBeVisible();
   await expect(tip).toBeHidden(); // already seen → doesn't pop again
 });
+
+test("assistant: 'add 1 cup plain boiled rice to my lunch today' lands in the meal plan", async ({ page }) => {
+  await unlock(page, "Alex", "1234");
+  await page.goto("/food/assistant");
+  await page.getByPlaceholder(/what can I cook/).fill("add 1 cup plain boiled rice to my lunch today");
+  await page.getByPlaceholder(/what can I cook/).press("Enter");
+  await expect(page.getByText(/Add Boiled rice \(1 cup\) to your lunch today/)).toBeVisible();
+  await page.getByRole("button", { name: "Approve" }).click();
+  await expect(page.getByText(/in the meal plan/).first()).toBeVisible();
+  await page.goto("/food/plan");
+  await expect(page.getByRole("button", { name: /Boiled rice \(1 cup\) — details/ }).first()).toBeVisible();
+});

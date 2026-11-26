@@ -11,6 +11,7 @@ import { loadFoodIndex, matchFood } from "../food/catalog";
 import { getActiveList } from "../food/grocery";
 import { dayLog } from "../food/foodlog";
 import { proposeAction } from "./actions";
+import { parseMealRequest } from "../food/meal-request";
 import { getLocalModel, extractJson } from "./provider";
 import { formatQuantity } from "../units";
 import { formatCents } from "../money";
@@ -162,13 +163,37 @@ async function shoppingAnswer(): Promise<Reply> {
   return reply(`${items.length} item(s) on the list${est ? `, about ${formatCents(est)} based on recorded prices` : ""}${low.length ? ` and ${low.length} low-stock item(s)` : ""}.`, cards);
 }
 
+async function mealAdd(ctx: Ctx): Promise<Reply> {
+  const req = parseMealRequest(ctx.text, today());
+  if (!req) return reply("Tell me the meal and when, e.g. “add 1 cup boiled rice to my lunch today” or “put lemon pasta on dinner tomorrow”.");
+  const recipes = await prisma.recipe.findMany({ select: { id: true, name: true } });
+  const key = (s: string) => tokens(s).join(" ");
+  const recipe = recipes.find((r) => key(r.name) === key(req.name)) ?? recipes.find((r) => key(req.name).length > 3 && key(r.name).includes(key(req.name)));
+  const pretty = req.name.charAt(0).toUpperCase() + req.name.slice(1);
+  const title = recipe?.name ?? (req.quantity !== null ? `${pretty} (${formatQuantity(req.quantity, req.unit)})` : pretty);
+  const payload = {
+    date: req.date, slot: req.slot, title, recipeId: recipe?.id ?? null, who: req.who,
+    servings: recipe ? null : 1,
+    food: !recipe && req.quantity !== null ? { name: req.name, quantity: req.quantity, unit: req.unit || "each" } : null,
+    addToPlan: req.addToPlan, logEaten: req.logEaten,
+  };
+  const when = `${req.slot.toLowerCase()} ${req.date === today() ? "today" : `on ${formatDate(req.date, { weekday: true })}`}`;
+  const summary = [req.addToPlan ? `Add ${title} to ${req.who === "me" ? "your" : "the household's"} ${when}` : null, req.logEaten ? `${req.addToPlan ? "log" : "Log"} it as eaten` : null].filter(Boolean).join(" and ");
+  const action = await proposeAction(ctx.viewer, "MEAL_ADD", summary, payload, ctx.conversationId);
+  const notes = [
+    !recipe && req.logEaten && req.quantity === null ? "Tell me an amount (e.g. “1 cup”) if you want the calories counted." : "",
+    recipe ? `Matched your saved recipe “${recipe.name}”.` : "",
+  ].filter(Boolean).join(" ");
+  return reply(`Here's what I understood. Nothing changes until you approve.${notes ? ` ${notes}` : ""}`, [{ type: "action", actionId: action.id, kind: action.kind, summary: action.summary, preview: payload }]);
+}
+
 async function inventoryChange(ctx: Ctx): Promise<Reply> {
   const changes = parseInventoryText(ctx.text);
   if (!changes.length) return reply("I couldn't pick out any items. Try something like “we bought 2 kg rice and 6 eggs”.");
   const index = await loadFoodIndex();
   const preview = changes.map((c) => ({ action: c.action, name: matchFood(index, c.name)?.name ?? c.name, foodItemId: matchFood(index, c.name)?.id ?? null, quantity: c.quantity, unit: c.unit || "each", location: c.location, confidence: "CONFIRMED" as const }));
   const verb = { ADD: "Add", CONSUME: "Use", WASTE: "Discard", SET: "Set" } as const;
-  const action = await proposeAction(ctx.viewer, "PANTRY_UPDATE", preview.map((p) => `${verb[p.action]} ${p.quantity === null ? "" : formatQuantity(p.quantity, p.unit) + " "}${p.name}`).join(", "), { changes: preview }, ctx.conversationId);
+  const action = await proposeAction(ctx.viewer, "PANTRY_UPDATE", "Pantry: " + preview.map((p) => `${verb[p.action]} ${p.quantity === null ? "" : formatQuantity(p.quantity, p.unit) + " "}${p.name}`).join(", "), { changes: preview }, ctx.conversationId);
   const unknown = preview.filter((p) => !p.foodItemId).map((p) => p.name);
   return reply(`Here's what I understood. Nothing changes until you approve.${unknown.length ? ` New catalogue item(s) will be created for: ${unknown.join(", ")}.` : ""}`, [{ type: "action", actionId: action.id, kind: action.kind, summary: action.summary, preview: { changes: preview } }]);
 }
@@ -279,6 +304,7 @@ const HELP = `I work from your recorded data. Try:
 • “What can I cook with 500g chicken thighs, spinach and mushrooms?”
 • “What vegetables are left?” / “What is expiring?”
 • “We bought 2 kg rice and 6 eggs” (updates pantry after you approve)
+• “Add 1 cup boiled rice to my lunch today” / “I had 2 eggs for breakfast” (meal plan & nutrition log)
 • “Plan seven days of dinners using our pantry, under $120, no chicken more than twice”
 • “What's missing for garlic butter chicken?” / “What should I buy?”
 • “Which bills are due?” / “Are we spending more on groceries this month?”
@@ -289,6 +315,7 @@ const HANDLERS: Handler[] = [
   { test: (t) => /^(help|what can you do|\?)$/.test(t.trim()), run: async () => reply(HELP) },
   { test: (t) => /\bplan\b.*\b(meals?|dinners?|lunch(es)?|breakfasts?|week|days?)\b/.test(t), run: mealPlanAnswer },
   { test: (t) => /\b(create|make|build|start|set up)\b.*\b(journal|tracker|diary|project|log)\b/.test(t) && !/shopping|grocery/.test(t), run: projectAnswer },
+  { test: (t) => parseMealRequest(t, today()) !== null, run: mealAdd },
   { test: (t) => /\badd\b.+\bto (the |my |our )?(shopping|grocery) list\b/.test(t), run: (c) => groceryAdd(c, c.text.replace(/^.*?\badd\b/i, "").replace(/\bto (the |my |our )?(shopping|grocery) list.*$/i, "")) },
   { test: (t) => /^(we |i )?(just )?(bought|got|picked up|added|add|used|use|ate|finished|threw (out|away)|consumed|have only|only have)\b/.test(t) || /\b(went bad|spoiled)\b/.test(t), run: inventoryChange },
   { test: (t) => /\b(set|change|update)\b.*\b(calorie|kcal)\b.*\btarget\b|\btarget\b.*\b\d{3,4}\s*(k?cal|calories)\b/.test(t), run: targetsAnswer },
