@@ -9,13 +9,19 @@ import { formatDate } from "@/lib/dates";
 import { Card, CardHeader, Badge, LinkButton } from "@/components/ui";
 import { InlineAction } from "@/components/forms";
 import { ReceiptReview } from "@/components/money/receipt-review";
-import { discardReceiptAction, rerunOcrAction } from "../../actions";
+import { rerunOcrAction } from "../../actions";
+import { DeleteReceipt } from "@/components/money/forms";
 
 export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const viewer = await requireViewer();
   const { id } = await params;
   const r = await prisma.receipt.findUnique({ where: { id }, include: { items: { orderBy: { sortOrder: "asc" } } } });
   if (!r) notFound();
+  const [priceCount, pantryCount] = await Promise.all([
+    prisma.priceRecord.count({ where: { receiptItemId: { in: r.items.map((i) => i.id) } } }),
+    prisma.inventoryTransaction.count({ where: { refType: "receipt", refId: r.id, delta: { gt: 0 } } }),
+  ]);
+  const del = <DeleteReceipt id={r.id} saved={r.status === "SAVED"} hasExpense={Boolean(r.expenseId)} priceCount={priceCount} pantryCount={pantryCount} />;
   if (r.status !== "PENDING_REVIEW") {
     return (
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
@@ -26,7 +32,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
             {r.items.map((i) => <li key={i.id} className="flex justify-between px-5 py-2"><span>{i.name} {i.quantity !== 1 ? <span className="text-faint">× {i.quantity} {i.unit}</span> : null}{i.addToPantry ? <Badge className="ml-2" tone="info">pantry</Badge> : null}</span><span className="tabular">{formatCents(i.totalCents, viewer.currency)}</span></li>)}
           </ul>
           {r.status === "SAVED" ? <p className="border-t border-line px-5 py-3 text-sm text-accent">{r.expenseId ? "Saved to the household ledger" : "Saved (no expense created)"}{r.items.some((i) => i.productVariantId) ? " · prices added to history" : ""}{r.items.some((i) => i.addToPantry) ? " · pantry updated" : ""}</p> : null}
-          <div className="flex gap-2 p-4">{r.expenseId ? <LinkButton href="/money/expenses" size="sm">Ledger</LinkButton> : null}<LinkButton href="/money/prices" size="sm" variant="ghost">Prices</LinkButton></div>
+          <div className="flex flex-wrap gap-2 p-4">{r.expenseId ? <LinkButton href="/money/expenses" size="sm">Ledger</LinkButton> : null}<LinkButton href="/money/prices" size="sm" variant="ghost">Prices</LinkButton><span className="flex-1" />{del}</div>
         </Card>
       </div>
     );
@@ -40,7 +46,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
         <h2 className="text-lg font-semibold">Review receipt</h2><Badge tone="warn">not saved yet</Badge>
         <div className="ml-auto flex gap-2">
           <InlineAction action={rerunOcrAction} fields={{ id }} variant="ghost">Re-run OCR</InlineAction>
-          <InlineAction action={discardReceiptAction} fields={{ id }} variant="ghost" confirm="Discard this draft? The image is kept for reference.">Discard</InlineAction>
+          {del}
         </div>
       </div>
       <ReceiptReview receiptId={id} initial={toReviewData(r)} categories={cats.map((c) => ({ key: c.key, name: c.name }))} profiles={profiles} viewerId={viewer.profileId} currency={viewer.currency} imageUrl={`/api/files/${r.fileId}`} ocrText={r.ocrText} warnings={warnings} />

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { prisma } from "../db";
-import { saveUpload, readUpload } from "../files";
+import { saveUpload, readUpload, deleteUpload } from "../files";
 import { sha256 } from "../auth/pin";
 import { ocrImage } from "./ocr";
 import { parseReceiptText, redactCardNumbers } from "./receipt-parser";
@@ -160,4 +160,35 @@ export async function rerunOcr(receiptId: string) {
     data: { ocrText: parsed.redactedText, ocrConfidence: res.confidence, items: { deleteMany: {}, create: parsed.items.map((it, i) => ({ rawText: it.rawText, name: it.name, quantity: it.quantity, unit: it.unit, unitPriceCents: it.unitPriceCents, totalCents: it.totalCents, sortOrder: i })) } },
   });
   return parsed;
+}
+
+/**
+ * Deletes a receipt and undoes what saving it did: its ledger expense, the prices it recorded and —
+ * if asked — the pantry stock it added (never below zero; logged as an adjustment). The photo is removed too.
+ */
+export async function deleteReceipt(receiptId: string, viewer: Pick<Viewer, "profileId">, opts: { removePantry: boolean }) {
+  const r = await prisma.receipt.findUniqueOrThrow({ where: { id: receiptId }, include: { items: true } });
+  const res = await prisma.$transaction(async (tx) => {
+    let expense = false;
+    if (r.expenseId && (await tx.expense.findUnique({ where: { id: r.expenseId } }))) { await tx.expense.delete({ where: { id: r.expenseId } }); expense = true; }
+    const prices = (await tx.priceRecord.deleteMany({ where: { receiptItemId: { in: r.items.map((i) => i.id) } } })).count;
+    let pantry = 0;
+    if (opts.removePantry) {
+      const added = await tx.inventoryTransaction.findMany({ where: { refType: "receipt", refId: receiptId, delta: { gt: 0 } } });
+      for (const t of added) {
+        const item = t.pantryItemId ? await tx.pantryItem.findUnique({ where: { id: t.pantryItemId } }) : null;
+        if (!item || item.quantity <= 0) continue;
+        const take = Math.min(item.quantity, t.delta);
+        await tx.pantryItem.update({ where: { id: item.id }, data: { quantity: Math.round((item.quantity - take) * 1000) / 1000 } });
+        await tx.inventoryTransaction.create({ data: { pantryItemId: item.id, foodItemId: item.foodItemId, name: item.name, delta: -take, unit: item.unit, reason: "ADJUST", refType: "receipt-deleted", refId: receiptId, profileId: viewer.profileId } });
+        pantry++;
+      }
+    }
+    await tx.receipt.delete({ where: { id: receiptId } });
+    await audit({ profileId: viewer.profileId, action: "receipt.delete", entityType: "receipt", entityId: receiptId, summary: `${r.merchant || "Receipt"}${r.totalCents ? ` ${(r.totalCents / 100).toFixed(2)}` : ""}${expense ? " · expense removed" : ""}${prices ? ` · ${prices} prices` : ""}${pantry ? ` · ${pantry} pantry items` : ""}` }, tx);
+    return { expense, prices, pantry };
+  });
+  const stillUsed = await prisma.receipt.count({ where: { fileId: r.fileId } });
+  if (!stillUsed) await deleteUpload(r.fileId).catch(() => undefined);
+  return res;
 }

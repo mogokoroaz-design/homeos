@@ -9,7 +9,7 @@ import { dateString, scheduleInput, reqNum, num } from "@/lib/validation";
 import { parseMoneyToCents } from "@/lib/money";
 import { createExpense, setBudget, copyBudgets, ensureCategory } from "@/lib/finance/ledger";
 import { markBillPaid } from "@/lib/finance/bills";
-import { saveReviewedReceipt, receiptReviewInput, discardReceipt, rerunOcr, PossibleDuplicateError } from "@/lib/finance/receipts";
+import { saveReviewedReceipt, receiptReviewInput, discardReceipt, rerunOcr, PossibleDuplicateError, deleteReceipt } from "@/lib/finance/receipts";
 import { recordPrice } from "@/lib/finance/prices";
 import { audit } from "@/lib/audit";
 
@@ -122,4 +122,11 @@ export async function linkProductFoodAction(fd: FormData) {
 export async function saveComparisonAction(fd: FormData) {
   await requireViewer();
   await runVoid(() => prisma.priceComparison.create({ data: { name: String(fd.get("name") || "Comparison"), productId: String(fd.get("productId")) } }));
+}
+
+export async function deleteReceiptAction(_: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const viewer = await requireViewer();
+  const res = await run(async () => deleteReceipt(String(fd.get("id")), viewer, { removePantry: fd.get("removePantry") === "on" }), "Receipt deleted");
+  if (res.ok) redirect("/money/receipts");
+  return res;
 }

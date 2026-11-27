@@ -493,3 +493,16 @@ test("assistant: 'add 1 cup plain boiled rice to my lunch today' lands in the me
   await page.goto("/food/plan");
   await expect(page.getByRole("button", { name: /Boiled rice \(1 cup\) — details/ }).first()).toBeVisible();
 });
+
+test("a saved receipt can be deleted, which also removes its expense", async ({ page }) => {
+  await unlock(page, "Sam", "5678");
+  await page.goto("/money/receipts");
+  await page.getByRole("link").filter({ hasText: /CORNER MARKET/i }).first().click();
+  await page.waitForURL(/\/money\/receipts\/[0-9a-f-]{36}$/);
+  await page.getByRole("button", { name: "Delete receipt" }).click();
+  const dlg = page.getByRole("dialog", { name: "Delete this receipt?" });
+  await expect(dlg.getByText(/removed from the household ledger/)).toBeVisible();
+  await dlg.getByRole("button", { name: "Delete" }).click();
+  await page.waitForURL(/\/money\/receipts$/);
+  await expect(page.getByRole("link").filter({ hasText: /CORNER MARKET/i })).toHaveCount(0);
+});

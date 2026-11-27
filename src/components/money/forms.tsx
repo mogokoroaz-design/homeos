@@ -1,11 +1,11 @@
 "use client";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Camera, Loader2 } from "lucide-react";
+import { Plus, Camera, Loader2, Trash2 } from "lucide-react";
 import { DialogButton } from "../dialog";
 import { ActionForm, SubmitButton } from "../forms";
 import { Field, Input, Select, Textarea, Checkbox, buttonClass } from "../ui";
-import { addExpenseAction, updateExpenseAction, createBillAction, payBillAction, addPriceAction } from "@/app/(app)/money/actions";
+import { addExpenseAction, updateExpenseAction, createBillAction, payBillAction, addPriceAction, deleteReceiptAction } from "@/app/(app)/money/actions";
 import { ScheduleFields } from "../home/forms";
 import { UnitSelect } from "../shell/quick-add";
 import { today } from "@/lib/dates";
@@ -120,5 +120,27 @@ export function ReceiptUpload() {
       <input ref={ref} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void onFile(f); e.target.value = ""; }} />
       {error ? <p className="text-sm text-danger">{error.msg} {error.dup ? <a className="underline" href={`/money/receipts/${error.dup}`}>Open it</a> : null}</p> : null}
     </div>
+  );
+}
+
+export function DeleteReceipt({ id, saved, hasExpense, priceCount, pantryCount }: { id: string; saved: boolean; hasExpense: boolean; priceCount: number; pantryCount: number }) {
+  return (
+    <DialogButton label="Delete receipt" icon={<Trash2 className="h-4 w-4" />} title="Delete this receipt?" variant="ghost" size="sm" className="text-danger">
+      {(close) => (
+        <ActionForm action={deleteReceiptAction} onSuccess={close} className="space-y-3 text-sm">
+          <input type="hidden" name="id" value={id} />
+          <p className="text-muted">The receipt and its photo are removed{saved ? ", and what saving it did is undone:" : "."}</p>
+          {saved ? (
+            <ul className="list-disc space-y-1 pl-5 text-muted">
+              {hasExpense ? <li>its expense is removed from the household ledger (and budgets)</li> : null}
+              {priceCount ? <li>{priceCount} recorded price{priceCount === 1 ? "" : "s"} removed from price history</li> : null}
+            </ul>
+          ) : null}
+          {pantryCount ? <Checkbox name="removePantry" label={`Also take the ${pantryCount} item${pantryCount === 1 ? "" : "s"} it added back out of the pantry`} defaultChecked /> : null}
+          <p className="text-xs text-faint">You can scan the same receipt again afterwards. This can’t be undone.</p>
+          <div className="flex justify-end gap-2"><button type="button" onClick={close} className="h-11 rounded-xl px-4 text-muted hover:text-ink">Cancel</button><SubmitButton variant="primary" className="bg-danger text-white">Delete</SubmitButton></div>
+        </ActionForm>
+      )}
+    </DialogButton>
   );
 }
